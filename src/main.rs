@@ -20,6 +20,11 @@ struct SplashBehaviour {
     identify: identify::Behaviour,
 }
 
+const BOOTNODES: [&str; 2] = [
+    "12D3KooWM1So76jzugAettgrfA1jfcaKA66EAE6k1zwAT3oVzcnK",
+    "12D3KooWCLvBXPohyMUKhbRrkcfRRkMLDfnCqyCjNSk6qyfjLMJ8",
+];
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let _ = tracing_subscriber::fmt()
@@ -48,6 +53,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             noise::Config::new,
             yamux::Config::default,
         )?
+        .with_dns()?
         .with_behaviour(|key| {
             println!("Our Peer ID: {}", key.public().to_peer_id().to_string());
 
@@ -83,15 +89,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let mut kademlia = kad::Behaviour::with_config(key.public().to_peer_id(), store, cfg);
 
-            // In case the user provided an address of a peer on the CLI, dial it.
-            if let Some(addr) = opt.introducer {
+            // In case the user provided an known peer, use it to enter the network
+            if let Some(addr) = opt.known_peer {
                 let Some(Protocol::P2p(peer_id)) = addr.iter().last() else {
                     return Err("Expect peer multiaddr to contain peer ID.".into());
                 };
 
                 kademlia.add_address(&peer_id, addr);
-                kademlia.bootstrap().unwrap();
+            } else {
+                println!("No known peers, bootstrapping from dexies dns introducer");
+                for peer in &BOOTNODES {
+                    kademlia.add_address(&peer.parse()?, "/dnsaddr/splash.dexie.space".parse()?);
+                }
             }
+
+            kademlia.bootstrap().unwrap();
 
             let identify = identify::Behaviour::new(identify::Config::new(
                 "/splash/id/1".into(),
@@ -135,7 +147,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             event = swarm.select_next_some() => match event {
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                     println!("Connected to peer: {peer_id}");
-                }
+                },
+                SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                    println!("Disconnected from peer: {peer_id}");
+                },
                 SwarmEvent::Behaviour(SplashBehaviourEvent::Gossipsub(gossipsub::Event::Message {
                     propagation_source: _,
                     message_id: _,
@@ -192,7 +207,7 @@ struct IdentityJson {
 #[clap(name = "Splash!")]
 struct Opt {
     #[clap(long)]
-    introducer: Option<Multiaddr>,
+    known_peer: Option<Multiaddr>,
 
     #[clap(long)]
     listen_address: Option<Multiaddr>,
