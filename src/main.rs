@@ -119,9 +119,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
         .build();
 
-    if let Some(addr) = opt.listen_address {
-        swarm.listen_on(addr.clone())?;
+    if !opt.listen_address.is_empty() {
+        for addr in opt.listen_address.iter() {
+            swarm.listen_on(addr.clone())?;
+        }
     } else {
+        // Fallback to default addresses if no listen addresses are provided
         swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
         swarm.listen_on("/ip6/::/tcp/0".parse()?)?;
     }
@@ -206,12 +209,26 @@ struct IdentityJson {
 #[derive(Parser, Debug)]
 #[clap(name = "Splash!")]
 struct Opt {
-    #[clap(long)]
+    #[clap(
+        long,
+        short,
+        value_name = "MULTIADDR",
+        help = "Set initial peer, if missing use dexies DNS introducer"
+    )]
     known_peer: Option<Multiaddr>,
 
-    #[clap(long)]
-    listen_address: Option<Multiaddr>,
+    #[clap(
+        long,
+        short,
+        value_name = "MULTIADDR",
+        help = "Set listen address, defaults to all interfaces, use multiple times for multiple addresses"
+    )]
+    listen_address: Vec<Multiaddr>,
 
-    #[clap(long)]
+    #[clap(
+        long,
+        short,
+        help = "Store and reuse peer identity (only useful for known peers)"
+    )]
     identity_file: Option<String>,
 }
