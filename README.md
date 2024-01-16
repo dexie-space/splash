@@ -4,6 +4,8 @@ Splash! is a decentralized network for sharing [Offers](https://chialisp.com/off
 
 Every connected peer receives all offers broadcasted from other peers. There is no centralized connection, the peers connect to each other and are aware of each other.
 
+This command line tools acts as a proxy between your application the Splash! network. It will broadcast your offers to the network and relay offers from other peers to your local application through a local HTTP API.
+
 ## Installation
 
 You can download prebuilt binaries in the
@@ -13,7 +15,7 @@ You can download prebuilt binaries in the
 
 You can also build and install from source (requires the latest stable [Rust] compiler.)
 
-```console
+```
 cargo install --git https://github.com/dexie-space/splash.git splash
 ```
 
@@ -23,10 +25,18 @@ cargo install --git https://github.com/dexie-space/splash.git splash
 Usage: splash [OPTIONS]
 
 Options:
-  -k, --known-peer <MULTIADDR>         Set initial peer, if missing use dexies DNS introducer
-  -l, --listen-address <MULTIADDR>     Set listen address, defaults to all interfaces, use multiple times for multiple addresses
-  -i, --identity-file <IDENTITY_FILE>  Store and reuse peer identity (useful for operating a known peer)
-  -h, --help                           Print help
+  -k, --known-peer <MULTIADDR>
+          Set initial peer, if missing use dexies DNS introducer
+  -l, --listen-address <MULTIADDR>
+          Set listen address, defaults to all interfaces, use multiple times for multiple addresses
+  -i, --identity-file <IDENTITY_FILE>
+          Store and reuse peer identity (only useful for known peers)
+      --offer-hook <OFFER_HOOK>
+          HTTP endpoint where incoming offers are posted to, sends JSON body {"offer":"offer1..."} (defaults to STDOUT)
+      --listen-offer-submission <HOST:PORT>
+          Start a HTTP API for offer submission, expects JSON body {"offer":"offer1..."}
+  -h, --help
+          Print help
 ```
 
 ## Examples
@@ -34,6 +44,14 @@ Options:
 Start the node and listen on all interfaces (will use dexies DNS introducer):
 
 `./splash`
+
+Start a node and open local webserver for offer submission on port 4000:
+
+`./splash --listen-offer-submission 127.0.0.1:4000`
+
+Start a node and post incoming offers to a HTTP hook:
+
+`./splash --offer-hook http://yourApi/v1/offers`
 
 Start a node and bootsrap from a known peer (will not use dexies DNS introducer):
 

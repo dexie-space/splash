@@ -4,14 +4,17 @@ use libp2p::multiaddr::Protocol;
 use libp2p::{gossipsub, kad, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux};
 use libp2p::{identify, identity, Multiaddr, StreamProtocol};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
 use std::error::Error;
 use std::fs::{self, File};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
+use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::{io, io::AsyncBufReadExt, select};
+use tokio::{io, select};
 use tracing_subscriber::EnvFilter;
+use warp::Filter;
 
 #[derive(NetworkBehaviour)]
 struct SplashBehaviour {
@@ -32,6 +35,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .try_init();
 
     let opt = Opt::parse();
+    let (offer_tx, mut offer_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(100);
 
     let id_keys = match opt.identity_file {
         Some(ref file_path) if fs::metadata(file_path).is_ok() => {
@@ -135,16 +139,44 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // subscribes to our topic
     swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
 
-    // Read full lines from stdin
-    let mut stdin = io::BufReader::new(io::stdin()).lines();
+    let offer_tx_clone = offer_tx.clone();
 
+    let offer_route = warp::post()
+        .and(warp::body::json())
+        .map(move |offer: serde_json::Value| {
+            if let Some(offer_str) = offer.get("offer").and_then(|v| v.as_str()) {
+                // Convert the offer string to bytes and send
+                let offer_bytes = offer_str.as_bytes().to_vec();
+                let tx = offer_tx_clone.clone();
+                tokio::spawn(async move {
+                    if tx.send(offer_bytes).await.is_err() {
+                        eprintln!("Failed to send offer through the channel");
+                    }
+                });
+                warp::reply::with_status("Offer received", warp::http::StatusCode::OK)
+            } else {
+                warp::reply::with_status(
+                    "Invalid offer format",
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+            }
+        });
+
+    // Start the warp server using the address provided in the `listen_offer_submission` option.
+    if let Some(submission_addr_str) = opt.listen_offer_submission {
+        let submission_addr: SocketAddr =
+            submission_addr_str.parse().expect("Invalid socket address");
+        tokio::spawn(async move {
+            warp::serve(offer_route).run(submission_addr).await;
+        });
+    }
     loop {
         select! {
-            Ok(Some(line)) = stdin.next_line() => {
-                if let Err(e) = swarm
-                    .behaviour_mut().gossipsub
-                    .publish(topic.clone(), line.as_bytes()) {
-                    println!("Publish error: {e:?}");
+            Some(offer) = offer_rx.recv() => {
+                println!("Broadcasting Offer: {}", String::from_utf8_lossy(&offer));
+
+                if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), offer) {
+                    eprintln!("Broadcasting offer failed: {}", e);
                 }
             },
             event = swarm.select_next_some() => match event {
@@ -159,12 +191,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     message_id: _,
                     message,
                 })) => {
-                    let msg_str = String::from_utf8_lossy(&message.data);
+                    let data_clone = message.data.clone();
+                    let msg_str = String::from_utf8_lossy(&data_clone).into_owned();
+
                     if msg_str.starts_with("offer1") {
                         println!(
                             "Received Offer: {}",
                             msg_str,
                         );
+
+                        if let Some(ref endpoint_url) = opt.offer_hook {
+                            let endpoint_url_clone = endpoint_url.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = offer_post_hook(&endpoint_url_clone, &msg_str).await {
+                                    eprintln!("Error posting to offer hook: {}", e);
+                                }
+                            });
+                        }
                     }
                 },
                 SwarmEvent::Behaviour(SplashBehaviourEvent::Identify(identify::Event::Received { info: identify::Info { observed_addr, listen_addrs, .. }, peer_id })) => {
@@ -183,6 +226,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
+}
+
+async fn offer_post_hook(endpoint: &str, offer: &str) -> Result<(), reqwest::Error> {
+    let client = reqwest::Client::new();
+
+    let offer_json = json!({ "offer": offer });
+    client.post(endpoint).json(&offer_json).send().await?;
+
+    Ok(())
 }
 
 fn save_keypair_to_file(keypair: &identity::Keypair, file_path: &str) -> io::Result<()> {
@@ -231,4 +283,17 @@ struct Opt {
         help = "Store and reuse peer identity (only useful for known peers)"
     )]
     identity_file: Option<String>,
+
+    #[clap(
+        long,
+        help = "HTTP endpoint where incoming offers are posted to, sends JSON body {\"offer\":\"offer1...\"} (defaults to STDOUT)"
+    )]
+    offer_hook: Option<String>,
+
+    #[clap(
+        long,
+        help = "Start a HTTP API for offer submission, expects JSON body {\"offer\":\"offer1...\"}",
+        value_name = "HOST:PORT"
+    )]
+    listen_offer_submission: Option<String>,
 }
