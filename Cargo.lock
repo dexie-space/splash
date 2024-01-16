@@ -3050,6 +3050,7 @@ dependencies = [
  "env_logger",
  "futures",
  "libp2p",
+ "openssl",
  "reqwest",
  "serde",
  "serde_json",
