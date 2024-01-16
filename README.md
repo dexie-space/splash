@@ -4,7 +4,7 @@ Splash! is a decentralized network for sharing [Offers](https://chialisp.com/off
 
 Every connected peer receives all offers broadcasted from other peers. There is no centralized connection, the peers connect to each other and are aware of each other.
 
-This command line tools acts as a proxy between your application the Splash! network. It will broadcast your offers to the network and relay offers from other peers to your local application through a local HTTP API.
+The Splash! command line tools acts as a proxy between your application the Splash! network. It will broadcast your offers to the network and relay offers from other peers to your local application through a local HTTP API.
 
 ## Installation
 
