@@ -53,7 +53,7 @@ Start a node and post incoming offers to a HTTP hook:
 
 `./splash --offer-hook http://yourApi/v1/offers`
 
-Start a node and bootsrap from a known peer (will not use dexies DNS introducer):
+Start a node and bootstrap from a known peer (will not use dexies DNS introducer):
 
 `./splash --known-peer /ip6/::1/tcp/12345/p2p/12D3K...`
 
