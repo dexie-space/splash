@@ -2,7 +2,7 @@ use clap::Parser;
 use futures::stream::StreamExt;
 use libp2p::multiaddr::Protocol;
 use libp2p::{gossipsub, kad, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux};
-use libp2p::{identify, identity, Multiaddr, StreamProtocol};
+use libp2p::{identify, identity, Multiaddr, PeerId, StreamProtocol};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
@@ -12,7 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::{io, select};
+use tokio::{io, select, time};
 use tracing_subscriber::EnvFilter;
 use warp::Filter;
 
@@ -23,9 +23,10 @@ struct SplashBehaviour {
     identify: identify::Behaviour,
 }
 
-const BOOTNODES: [&str; 2] = [
+const BOOTNODES: [&str; 3] = [
     "12D3KooWM1So76jzugAettgrfA1jfcaKA66EAE6k1zwAT3oVzcnK",
     "12D3KooWCLvBXPohyMUKhbRrkcfRRkMLDfnCqyCjNSk6qyfjLMJ8",
+    "12D3KooWP6QDYTCccwfUQVAc6jQDvzVY1FtU3WVsAxmVratbbC5V",
 ];
 
 #[tokio::main]
@@ -170,6 +171,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             warp::serve(offer_route).run(submission_addr).await;
         });
     }
+    let mut peer_discovery_interval = time::interval(time::Duration::from_secs(10));
+
     loop {
         select! {
             Some(offer) = offer_rx.recv() => {
@@ -178,6 +181,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), offer) {
                     eprintln!("Broadcasting offer failed: {}", e);
                 }
+            },
+            _ = peer_discovery_interval.tick() => {
+                swarm.behaviour_mut().kademlia.get_closest_peers(PeerId::random());
             },
             event = swarm.select_next_some() => match event {
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
