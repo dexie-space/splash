@@ -171,6 +171,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             warp::serve(offer_route).run(submission_addr).await;
         });
     }
+
     let mut peer_discovery_interval = time::interval(time::Duration::from_secs(10));
 
     loop {
