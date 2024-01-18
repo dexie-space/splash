@@ -64,3 +64,11 @@ Start a node and listen on a specific interface/port:
 Start a node and reuse identity:
 
 `./splash --identify-file identity.json`
+
+## Become a stable peer
+
+To become a stable peer, you need to open an inbound port in your firewall. Then start Splash! with the `--listen-address` option and choose your public interface and the selected port (eg. `11511`).
+
+`./splash --listen-address /ip6/2001:db8::1/tcp/11511 --listen-address /ip4/1.2.3.4/tcp/11511`
+
+Running a stable peer? Let us know! We will add you to the default bootstrap list.
