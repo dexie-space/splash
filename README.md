@@ -65,6 +65,16 @@ Start a node and reuse identity:
 
 `./splash --identify-file identity.json`
 
+## Test the API with Docker
+
+```bash
+docker run -p 11511:11511 -p 4000:4000 mpwsh/splash:latest \
+--listen-offer-submission 0.0.0.0:4000 \
+--listen-address /ip4/0.0.0.0/tcp/11511
+# send the request
+curl -X POST -H "Content-Type: application/json" -d '{"offer":"offer1..."}' http://localhost:4000
+```
+
 ## Become a stable peer
 
 To become a stable peer, you need to open an inbound port in your firewall. Then start Splash! with the `--listen-address` option and choose your public interface and the selected port (eg. `11511`).
