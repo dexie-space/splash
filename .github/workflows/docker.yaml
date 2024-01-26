@@ -27,7 +27,7 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: all
+          platforms: arm64
       - run: docker context create ci
       - run: docker context use ci
       - name: Set up Docker Buildx
