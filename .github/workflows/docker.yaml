@@ -36,7 +36,7 @@ jobs:
           buildkitd-flags: --debug
           endpoint: ci
       - name: Build and push ${{ github.event.repository.name }}
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
