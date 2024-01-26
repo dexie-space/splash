@@ -31,7 +31,7 @@ jobs:
       - run: docker context create ci
       - run: docker context use ci
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v5
+        uses: docker/setup-buildx-action@v3
         with:
           endpoint: ci
       - name: Build and push ${{ github.event.repository.name }}
