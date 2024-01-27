@@ -1,9 +1,9 @@
 name: build and release
 
 on:
-  push:
-    branches:
-      - mpw/dockerfile
+  workflow_dispatch:
+  release:
+    types: [created]
 
 permissions:
   contents: write
@@ -64,6 +64,7 @@ jobs:
             target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}.sha256
   docker:
     runs-on: ubuntu-latest
+    name: Build and push docker image
     needs: build
     steps:
       - name: Checkout
