@@ -159,10 +159,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     });
                     warp::reply::with_status("Offer received", warp::http::StatusCode::OK)
                 }
-                Some(_) => warp::reply::with_status(
-                    "Unable to parse offer, not valid bech32",
-                    warp::http::StatusCode::BAD_REQUEST,
-                ),
                 _ => warp::reply::with_status(
                     "Invalid offer format",
                     warp::http::StatusCode::BAD_REQUEST,
