@@ -146,10 +146,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .and(warp::body::json())
         .map(
             move |offer: serde_json::Value| match offer.get("offer").and_then(|v| v.as_str()) {
-                Some(offer_str)
-                    if bech32::decode(offer_str).is_ok()
-                        && offer_str.as_bytes().len() <= 300 * 1024 =>
-                {
+                Some(offer_str) if offer_str.as_bytes().len() > 300 * 1024 / 8 => {
+                    warp::reply::with_status("Offer too large", warp::http::StatusCode::BAD_REQUEST)
+                }
+                Some(offer_str) if bech32::decode(offer_str).is_ok() => {
                     let offer_bytes = offer_str.as_bytes().to_vec();
                     let tx = offer_tx_clone.clone();
                     tokio::spawn(async move {
@@ -159,6 +159,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     });
                     warp::reply::with_status("Offer received", warp::http::StatusCode::OK)
                 }
+                Some(_) => warp::reply::with_status(
+                    "Unable to parse offer, not valid bech32",
+                    warp::http::StatusCode::BAD_REQUEST,
+                ),
                 _ => warp::reply::with_status(
                     "Invalid offer format",
                     warp::http::StatusCode::BAD_REQUEST,
