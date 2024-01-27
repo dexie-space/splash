@@ -1,34 +1,27 @@
-FROM rust:1.75.0-bookworm as chef
-RUN cargo install cargo-chef --locked
+FROM alpine:3.14
 
+RUN apk add --no-cache curl jq
+
+# Set the work directory
 WORKDIR /app
-RUN apt update && apt install libssl-dev pkg-config -y
+ENV APP_NAME=splash
 
-FROM chef as planner
-COPY Cargo.* rust-toolchain.toml ./
-COPY src src
-# Compute a lock-like file for our project
-RUN cargo chef prepare --recipe-path recipe.json
+RUN arch=$(uname -m) && \
+    os=$(uname -s) && \
+    case "$arch" in \
+        x86_64) arch="amd64" ;; \
+        aarch64) arch="arm64" ;; \
+        *) echo "Unsupported architecture: $arch" && exit 1 ;; \
+    esac && \
+    case "$os" in \
+        Linux) os="linux" ;; \
+        Darwin) os="darwin" ;; \
+        *) echo "Unsupported OS: $os" && exit 1 ;; \
+    esac && \
+    release_url=$(curl -sfL https://api.github.com/repos/dexie-space/splash/releases/latest | \
+    jq -r --arg binary "${APP_NAME}-${os}-${arch}" '.assets[] | select(.name == $binary) | .browser_download_url') && \
+    curl -sfL $release_url -o splash && \
+    chmod +x $APP_NAME
 
-FROM chef as builder
-COPY --from=planner /app/recipe.json recipe.json
-# Build our project dependencies, not our application!
-RUN cargo chef cook --release --recipe-path recipe.json
-COPY Cargo.* rust-toolchain.toml ./
-COPY src src
+ENTRYPOINT ["/app/splash"]
 
-FROM builder AS builder
-RUN cargo build --release --bin splash
-
-FROM debian:bookworm-slim AS base
-WORKDIR /app
-RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends libssl-dev ca-certificates \
-    # Clean up
-    && apt-get autoremove -y \
-    && apt-get clean -y \
-    && rm -rf /var/lib/apt/lists/*
-
-FROM base AS splash
-COPY --from=builder /app/target/release/splash splash
-ENTRYPOINT ["./splash"]
