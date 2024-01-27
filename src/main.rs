@@ -144,24 +144,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let offer_route = warp::post()
         .and(warp::body::json())
-        .map(move |offer: serde_json::Value| {
-            if let Some(offer_str) = offer.get("offer").and_then(|v| v.as_str()) {
-                // Convert the offer string to bytes and send
-                let offer_bytes = offer_str.as_bytes().to_vec();
-                let tx = offer_tx_clone.clone();
-                tokio::spawn(async move {
-                    if tx.send(offer_bytes).await.is_err() {
-                        eprintln!("Failed to send offer through the channel");
-                    }
-                });
-                warp::reply::with_status("Offer received", warp::http::StatusCode::OK)
-            } else {
-                warp::reply::with_status(
+        .map(
+            move |offer: serde_json::Value| match offer.get("offer").and_then(|v| v.as_str()) {
+                Some(offer_str)
+                    if bech32::decode(offer_str).is_ok()
+                        && offer_str.as_bytes().len() <= 300 * 1024 =>
+                {
+                    let offer_bytes = offer_str.as_bytes().to_vec();
+                    let tx = offer_tx_clone.clone();
+                    tokio::spawn(async move {
+                        if tx.send(offer_bytes).await.is_err() {
+                            eprintln!("Failed to send offer through the channel");
+                        }
+                    });
+                    warp::reply::with_status("Offer received", warp::http::StatusCode::OK)
+                }
+                _ => warp::reply::with_status(
                     "Invalid offer format",
                     warp::http::StatusCode::BAD_REQUEST,
-                )
-            }
-        });
+                ),
+            },
+        );
 
     // Start the warp server using the address provided in the `listen_offer_submission` option.
     if let Some(submission_addr_str) = opt.listen_offer_submission {
