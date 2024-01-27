@@ -68,7 +68,7 @@ Start a node and reuse identity:
 ## Test the API with Docker
 
 ```bash
-docker run -p 11511:11511 -p 4000:4000 dexie-space/splash:latest \
+docker run -p 11511:11511 -p 4000:4000 dexiespace/splash:latest \
 --listen-offer-submission 0.0.0.0:4000 \
 --listen-address /ip4/0.0.0.0/tcp/11511
 # send the request
