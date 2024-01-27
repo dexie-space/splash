@@ -95,8 +95,8 @@ jobs:
           push: true
           platforms: linux/amd64, linux/arm64
           build-args: |
-            GITHUB_ORG=mpwsh
-            GITHUB_REPO=splash
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.repository }}:${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/${{ github.repository }}:latest
+            GITHUB_ORG=${{ github.repository_owner }}
+            GITHUB_REPO=${{ github.event.repository.name }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

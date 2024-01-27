@@ -22,14 +22,15 @@ RUN arch=$(uname -m) && \
         Darwin) os="darwin" ;; \
         *) echo "Unsupported OS: $os" && exit 1 ;; \
     esac && \
-    release_url=$(curl -sfL https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}/releases/latest | \
+    RELEASE_URL=$(curl -sfL https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}/releases/latest | \
     jq -r --arg binary "${GITHUB_REPO}-${os}-${arch}" '.assets[] | select(.name == $binary) | .browser_download_url') && \
-    curl -sfL $release_url -o splash && \
-    chmod +x $GITHUB_REPO
+    echo "Downloading binary" && \
+    curl -sfL ${RELEASE_URL} -o ${GITHUB_REPO} && \
+    chmod +x ${GITHUB_REPO}
 
 RUN cat > /entrypoint.sh <<'EOF'
 #!/bin/sh
-exec /app/$GITHUB_REPO "$@"
+exec /app/${GITHUB_REPO} "$@"
 EOF
 
 RUN chmod +x /entrypoint.sh
