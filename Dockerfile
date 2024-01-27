@@ -3,7 +3,12 @@ FROM alpine:3.14
 RUN apk add --no-cache curl jq
 
 WORKDIR /app
-ENV APP_NAME=splash
+
+ARG GITHUB_ORG
+ARG GITHUB_REPO
+ENV GITHUB_ORG $GITHUB_ORG
+ENV GITHUB_REPO $GITHUB_REPO
+
 
 RUN arch=$(uname -m) && \
     os=$(uname -s) && \
@@ -17,9 +22,16 @@ RUN arch=$(uname -m) && \
         Darwin) os="darwin" ;; \
         *) echo "Unsupported OS: $os" && exit 1 ;; \
     esac && \
-    release_url=$(curl -sfL https://api.github.com/repos/dexie-space/splash/releases/latest | \
-    jq -r --arg binary "${APP_NAME}-${os}-${arch}" '.assets[] | select(.name == $binary) | .browser_download_url') && \
+    release_url=$(curl -sfL https://api.github.com/repos/${GITHUB_ORG}/${GITHUB_REPO}/releases/latest | \
+    jq -r --arg binary "${GITHUB_REPO}-${os}-${arch}" '.assets[] | select(.name == $binary) | .browser_download_url') && \
     curl -sfL $release_url -o splash && \
-    chmod +x $APP_NAME
+    chmod +x $GITHUB_REPO
 
-ENTRYPOINT ["/app/splash"]
+RUN cat > /entrypoint.sh <<'EOF'
+#!/bin/sh
+exec /app/$GITHUB_REPO "$@"
+EOF
+
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
