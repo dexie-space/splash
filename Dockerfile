@@ -2,7 +2,6 @@ FROM alpine:3.14
 
 RUN apk add --no-cache curl jq
 
-# Set the work directory
 WORKDIR /app
 ENV APP_NAME=splash
 
@@ -24,4 +23,3 @@ RUN arch=$(uname -m) && \
     chmod +x $APP_NAME
 
 ENTRYPOINT ["/app/splash"]
-

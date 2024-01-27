@@ -1,13 +1,9 @@
 name: Build and push image
 
-#on:
-#  workflow_dispatch:
-#  release:
-#    types: [created]
 on:
-  push:
-    branches:
-      - mpw/dockerfile
+  workflow_dispatch:
+  release:
+    types: [created]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
