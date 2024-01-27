@@ -39,10 +39,10 @@ jobs:
         toolchain:
           - stable
     steps:
-      - name: Install Linux musl-tools
-        if: matrix.platform.bin == 'splash-linux-amd64'
-        run: sudo apt-get install --yes --no-install-recommends musl-tools
       - uses: actions/checkout@v3
+      - name: Install Linux musl-tools
+        if: contains(matrix.platform.target, 'musl')
+        run: sudo apt-get install --yes --no-install-recommends musl-tools
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
         with:
