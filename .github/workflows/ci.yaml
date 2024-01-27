@@ -87,6 +87,13 @@ jobs:
         uses: docker/setup-buildx-action@v3
         with:
           endpoint: ci
+      - name: Fetch latest release tag
+        id: latest-tag
+        run: |
+          LATEST_TAG=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
+          echo "Latest release tag is $LATEST_TAG"
+          echo "::set-output name=tag::$LATEST_TAG"
+        shell: bash
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -97,6 +104,6 @@ jobs:
           build-args: |
             GITHUB_ORG=${{ github.repository_owner }}
             GITHUB_REPO=${{ github.event.repository.name }}
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }},${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ steps.latest-tag.outputs.tag }},${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

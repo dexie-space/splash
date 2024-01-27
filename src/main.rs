@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )?
         .with_dns()?
         .with_behaviour(|key| {
-            println!("Our Peer ID: {}", key.public().to_peer_id().to_string());
+            println!("Our Peer ID: {}", key.public().to_peer_id());
 
             // We can take the hash of message and use it as an ID.
             let unique_offer_fn = |message: &gossipsub::Message| {
@@ -85,9 +85,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // Create a Kademlia behaviour.
             let mut cfg = kad::Config::default();
 
-            cfg.set_protocol_names(vec![StreamProtocol::try_from_owned(format!(
-                "/splash/kad/1"
-            ))?]);
+            cfg.set_protocol_names(vec![StreamProtocol::try_from_owned(
+                "/splash/kad/1".to_string(),
+            )?]);
 
             cfg.set_query_timeout(Duration::from_secs(60));
             let store = kad::store::MemoryStore::new(key.public().to_peer_id());
