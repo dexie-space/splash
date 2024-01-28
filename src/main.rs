@@ -29,6 +29,8 @@ const BOOTNODES: [&str; 3] = [
     "12D3KooWP6QDYTCccwfUQVAc6jQDvzVY1FtU3WVsAxmVratbbC5V",
 ];
 
+const MAX_OFFER_SIZE: usize = 300 * 1024;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let _ = tracing_subscriber::fmt()
@@ -73,6 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let gossipsub_config = gossipsub::ConfigBuilder::default()
                 .heartbeat_interval(Duration::from_secs(5)) // This is set to aid debugging by not cluttering the log space
                 .message_id_fn(unique_offer_fn) // No duplicate offers will be propagated.
+                .max_transmit_size(MAX_OFFER_SIZE)
                 .build()
                 .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
 
@@ -146,7 +149,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .and(warp::body::json())
         .map(
             move |offer: serde_json::Value| match offer.get("offer").and_then(|v| v.as_str()) {
-                Some(offer_str) if offer_str.as_bytes().len() > 300 * 1024 / 8 => {
+                Some(offer_str) if offer_str.as_bytes().len() > MAX_OFFER_SIZE => {
                     warp::reply::with_status("Offer too large", warp::http::StatusCode::BAD_REQUEST)
                 }
                 Some(offer_str) if bech32::decode(offer_str).is_ok() => {
