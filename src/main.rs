@@ -29,6 +29,8 @@ const BOOTNODES: [&str; 3] = [
     "12D3KooWP6QDYTCccwfUQVAc6jQDvzVY1FtU3WVsAxmVratbbC5V",
 ];
 
+const MAX_OFFER_SIZE: usize = 300 * 1024;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let _ = tracing_subscriber::fmt()
@@ -73,6 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let gossipsub_config = gossipsub::ConfigBuilder::default()
                 .heartbeat_interval(Duration::from_secs(5)) // This is set to aid debugging by not cluttering the log space
                 .message_id_fn(unique_offer_fn) // No duplicate offers will be propagated.
+                .max_transmit_size(MAX_OFFER_SIZE)
                 .build()
                 .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
 
@@ -144,24 +147,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let offer_route = warp::post()
         .and(warp::body::json())
-        .map(move |offer: serde_json::Value| {
-            if let Some(offer_str) = offer.get("offer").and_then(|v| v.as_str()) {
-                // Convert the offer string to bytes and send
-                let offer_bytes = offer_str.as_bytes().to_vec();
-                let tx = offer_tx_clone.clone();
-                tokio::spawn(async move {
-                    if tx.send(offer_bytes).await.is_err() {
-                        eprintln!("Failed to send offer through the channel");
-                    }
-                });
-                warp::reply::with_status("Offer received", warp::http::StatusCode::OK)
-            } else {
-                warp::reply::with_status(
+        .map(
+            move |offer: serde_json::Value| match offer.get("offer").and_then(|v| v.as_str()) {
+                Some(offer_str) if offer_str.as_bytes().len() > MAX_OFFER_SIZE => {
+                    warp::reply::with_status("Offer too large", warp::http::StatusCode::BAD_REQUEST)
+                }
+                Some(offer_str) if bech32::decode(offer_str).is_ok() => {
+                    let offer_bytes = offer_str.as_bytes().to_vec();
+                    let tx = offer_tx_clone.clone();
+                    tokio::spawn(async move {
+                        if tx.send(offer_bytes).await.is_err() {
+                            eprintln!("Failed to send offer through the channel");
+                        }
+                    });
+                    warp::reply::with_status("Offer received", warp::http::StatusCode::OK)
+                }
+                _ => warp::reply::with_status(
                     "Invalid offer format",
                     warp::http::StatusCode::BAD_REQUEST,
-                )
-            }
-        });
+                ),
+            },
+        );
 
     // Start the warp server using the address provided in the `listen_offer_submission` option.
     if let Some(submission_addr_str) = opt.listen_offer_submission {
