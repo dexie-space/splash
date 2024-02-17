@@ -63,7 +63,7 @@ Start a node and listen on a specific interface/port:
 
 Start a node and reuse identity:
 
-`./splash --identify-file identity.json`
+`./splash --identity-file identity.json`
 
 ## Test the API with Docker
 
