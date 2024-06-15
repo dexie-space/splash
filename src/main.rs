@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let mut kademlia = kad::Behaviour::with_config(key.public().to_peer_id(), store, cfg);
 
-            // In case the user provided an known peer, use it to enter the network
+            // In case the user provided a known peer, use it to enter the network
             if let Some(addr) = opt.known_peer {
                 let Some(Protocol::P2p(peer_id)) = addr.iter().last() else {
                     return Err("Expect peer multiaddr to contain peer ID.".into());
