@@ -2930,7 +2930,7 @@ dependencies = [
 
 [[package]]
 name = "splash"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "async-trait",
  "bech32",
