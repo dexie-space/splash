@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("No known peers, bootstrapping from dexies dns introducer");
 
         let resolver = TokioAsyncResolver::tokio_from_system_conf().unwrap();
-        let response = resolver.txt_lookup("_dnsaddr.splash.dexie.space").await?;
+        let response = resolver.txt_lookup("_dnsaddr.splash.dexie.space.").await?;
 
         for record in response.iter() {
             for txt in record.txt_data() {
