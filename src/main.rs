@@ -1,5 +1,6 @@
 use clap::Parser;
 use futures::stream::StreamExt;
+use hickory_resolver::TokioAsyncResolver;
 use libp2p::multiaddr::Protocol;
 use libp2p::{gossipsub, kad, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux};
 use libp2p::{identify, identity, Multiaddr, PeerId, StreamProtocol};
@@ -11,6 +12,7 @@ use std::fs::{self, File};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::time::Duration;
 use tokio::{io, select, time};
 use tracing_subscriber::EnvFilter;
@@ -22,12 +24,6 @@ struct SplashBehaviour {
     kademlia: kad::Behaviour<kad::store::MemoryStore>,
     identify: identify::Behaviour,
 }
-
-const BOOTNODES: [&str; 3] = [
-    "12D3KooWM1So76jzugAettgrfA1jfcaKA66EAE6k1zwAT3oVzcnK",
-    "12D3KooWCLvBXPohyMUKhbRrkcfRRkMLDfnCqyCjNSk6qyfjLMJ8",
-    "12D3KooWP6QDYTCccwfUQVAc6jQDvzVY1FtU3WVsAxmVratbbC5V",
-];
 
 const MAX_OFFER_SIZE: usize = 300 * 1024;
 
@@ -53,6 +49,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
+    let mut known_peers = opt.known_peer.clone();
+
+    if known_peers.is_empty() {
+        println!("No known peers, bootstrapping from dexies dns introducer");
+
+        let resolver = TokioAsyncResolver::tokio_from_system_conf().unwrap();
+        let response = resolver.txt_lookup("_dnsaddr.splash.dexie.space").await?;
+
+        for record in response.iter() {
+            for txt in record.txt_data() {
+                if let Ok(addr_str) = std::str::from_utf8(txt) {
+                    let addr_str = addr_str.trim_start_matches("dnsaddr="); // Remove "dnsaddr=" prefix
+
+                    if let Ok(peer_multiaddr) = Multiaddr::from_str(addr_str) {
+                        known_peers.push(peer_multiaddr);
+                    }
+                }
+            }
+        }
+    }
+
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(id_keys)
         .with_tokio()
         .with_tcp(
@@ -60,7 +77,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             noise::Config::new,
             yamux::Config::default,
         )?
-        .with_dns()?
         .with_behaviour(|key| {
             println!("Our Peer ID: {}", key.public().to_peer_id());
 
@@ -97,18 +113,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let mut kademlia = kad::Behaviour::with_config(key.public().to_peer_id(), store, cfg);
 
-            // In case the user provided a known peer, use it to enter the network
-            if let Some(addr) = opt.known_peer {
+            for addr in known_peers.iter() {
                 let Some(Protocol::P2p(peer_id)) = addr.iter().last() else {
                     return Err("Expect peer multiaddr to contain peer ID.".into());
                 };
-
-                kademlia.add_address(&peer_id, addr);
-            } else {
-                println!("No known peers, bootstrapping from dexies dns introducer");
-                for peer in &BOOTNODES {
-                    kademlia.add_address(&peer.parse()?, "/dnsaddr/splash.dexie.space".parse()?);
-                }
+                kademlia.add_address(&peer_id, addr.clone());
             }
 
             kademlia.bootstrap().unwrap();
@@ -280,7 +289,7 @@ struct Opt {
         value_name = "MULTIADDR",
         help = "Set initial peer, if missing use dexies DNS introducer"
     )]
-    known_peer: Option<Multiaddr>,
+    known_peer: Vec<Multiaddr>,
 
     #[clap(
         long,
