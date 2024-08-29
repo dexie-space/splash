@@ -16,6 +16,8 @@ use std::str::FromStr;
 use std::time::Duration;
 use tokio::{io, select, time};
 use tracing_subscriber::EnvFilter;
+use warp::http::header;
+use warp::http::StatusCode;
 use warp::Filter;
 
 #[derive(NetworkBehaviour)]
@@ -156,10 +158,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let offer_route = warp::post()
         .and(warp::body::json())
-        .map(
-            move |offer: serde_json::Value| match offer.get("offer").and_then(|v| v.as_str()) {
+        .map(move |offer: serde_json::Value| {
+            let response = match offer.get("offer").and_then(|v| v.as_str()) {
                 Some(offer_str) if offer_str.as_bytes().len() > MAX_OFFER_SIZE => {
-                    warp::reply::with_status("Offer too large", warp::http::StatusCode::BAD_REQUEST)
+                    warp::reply::with_status(
+                        warp::reply::json(&json!({
+                            "success": false,
+                            "error": "Offer too large"
+                        })),
+                        StatusCode::BAD_REQUEST,
+                    )
                 }
                 Some(offer_str) if bech32::decode(offer_str).is_ok() => {
                     let offer_bytes = offer_str.as_bytes().to_vec();
@@ -169,14 +177,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             eprintln!("Failed to send offer through the channel");
                         }
                     });
-                    warp::reply::with_status("Offer received", warp::http::StatusCode::OK)
+                    warp::reply::with_status(
+                        warp::reply::json(&json!({
+                            "success": true,
+                        })),
+                        StatusCode::OK,
+                    )
                 }
                 _ => warp::reply::with_status(
-                    "Invalid offer format",
-                    warp::http::StatusCode::BAD_REQUEST,
+                    warp::reply::json(&json!({
+                        "success": false,
+                        "error": "Invalid offer format"
+                    })),
+                    StatusCode::BAD_REQUEST,
                 ),
-            },
-        );
+            };
+
+            warp::reply::with_header(response, header::CONTENT_TYPE, "application/json")
+        });
 
     // Start the warp server using the address provided in the `listen_offer_submission` option.
     if let Some(submission_addr_str) = opt.listen_offer_submission {
