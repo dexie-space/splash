@@ -2,8 +2,10 @@ use clap::Parser;
 use futures::stream::StreamExt;
 use hickory_resolver::TokioAsyncResolver;
 use libp2p::multiaddr::Protocol;
-use libp2p::{gossipsub, kad, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux};
-use libp2p::{identify, identity, Multiaddr, PeerId, StreamProtocol};
+use libp2p::{
+    autonat, gossipsub, identify, identity, kad, noise, swarm::NetworkBehaviour, swarm::SwarmEvent,
+    tcp, yamux, Multiaddr, PeerId, StreamProtocol,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
@@ -25,6 +27,7 @@ struct SplashBehaviour {
     gossipsub: gossipsub::Behaviour,
     kademlia: kad::Behaviour<kad::store::MemoryStore>,
     identify: identify::Behaviour,
+    autonat: autonat::Behaviour,
 }
 
 const MAX_OFFER_SIZE: usize = 300 * 1024;
@@ -105,9 +108,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             // Create a Kademlia behaviour.
             let mut cfg = kad::Config::new(
-                StreamProtocol::try_from_owned(
-                    "/splash/kad/1".to_string(),
-                ).expect("protocol name is valid")
+                StreamProtocol::try_from_owned("/splash/kad/1".to_string())
+                    .expect("protocol name is valid"),
             );
 
             cfg.set_query_timeout(Duration::from_secs(60));
@@ -129,10 +131,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 key.public().clone(),
             ));
 
+            let autonat =
+                autonat::Behaviour::new(key.public().to_peer_id(), autonat::Config::default());
+
             Ok(SplashBehaviour {
                 gossipsub,
                 kademlia,
                 identify,
+                autonat,
             })
         })?
         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
@@ -221,10 +227,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             },
             event = swarm.select_next_some() => match event {
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                    println!("Connected to peer: {peer_id}");
+                    let num_connections = swarm.connected_peers().count();
+                    println!("Connected to peer: {peer_id}, peers: {num_connections}");
                 },
                 SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                    println!("Disconnected from peer: {peer_id}");
+                    let num_connections = swarm.connected_peers().count();
+                    println!("Disconnected from peer: {peer_id}, peers: {num_connections}");
                 },
                 SwarmEvent::Behaviour(SplashBehaviourEvent::Gossipsub(gossipsub::Event::Message {
                     propagation_source: _,
@@ -251,17 +259,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                 },
                 SwarmEvent::Behaviour(SplashBehaviourEvent::Identify(identify::Event::Received {
-                    info: identify::Info { observed_addr, listen_addrs, .. },
+                    info: identify::Info { listen_addrs, .. },
                     peer_id,
                     connection_id: _
                 })) => {
                     for addr in listen_addrs {
+                        // If the node is advertising a non-global address, ignore it
+                        let is_non_global = addr.iter().any(|p| match p {
+                            Protocol::Ip4(addr) => addr.is_loopback() || addr.is_private(),
+                            Protocol::Ip6(addr) => addr.is_loopback(),
+                            _ => false,
+                        });
+
+                        if is_non_global {
+                            continue;
+                        }
+
                         swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
                     }
-                    // Mark the address observed for us by the external peer as confirmed.
-                    // TODO: We shouldn't trust this, instead we should confirm our own address manually or using
-                    // `libp2p-autonat`.
-                    swarm.add_external_address(observed_addr);
+
+                },
+                SwarmEvent::Behaviour(SplashBehaviourEvent::Autonat(autonat::Event::OutboundProbe(probe))) => {
+                    match probe {
+                        autonat::OutboundProbeEvent::Response {
+                            probe_id: _,
+                            peer: _,
+                            address,
+                        } => {
+                            println!("Reachability confirmed at multiaddr: {:?}", address);
+                            swarm.add_external_address(address);
+                        }
+                        _ => {},
+                    }
                 },
                 SwarmEvent::NewListenAddr { address, .. } => {
                     println!("Listening on: {address}");
