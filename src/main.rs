@@ -56,19 +56,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if known_peers.is_empty() {
         println!("No known peers, bootstrapping from dexies dns introducer");
 
+        const DNS_NAME: &str = "_dnsaddr.splash.dexie.space.";
+
         let resolver = TokioAsyncResolver::tokio_from_system_conf().unwrap();
-        let response = resolver.txt_lookup("_dnsaddr.splash.dexie.space.").await?;
+        let mut response = resolver.txt_lookup(DNS_NAME).await;
 
-        for record in response.iter() {
-            for txt in record.txt_data() {
-                if let Ok(addr_str) = std::str::from_utf8(txt) {
-                    let addr_str = addr_str.trim_start_matches("dnsaddr="); // Remove "dnsaddr=" prefix
+        // fallback to cloudflare dns if system dns lookup fails (possibly due to large response)
+        if response.is_err() || response.as_ref().unwrap().iter().next().is_none() {
+            println!("system dns lookup failed, trying cloudflare dns");
+            let cloudflare_resolver = TokioAsyncResolver::tokio(
+                hickory_resolver::config::ResolverConfig::cloudflare(),
+                hickory_resolver::config::ResolverOpts::default(),
+            );
+            response = cloudflare_resolver.txt_lookup(DNS_NAME).await;
+        }
 
-                    if let Ok(peer_multiaddr) = Multiaddr::from_str(addr_str) {
-                        known_peers.push(peer_multiaddr);
+        if let Ok(records) = response {
+            for record in records.iter() {
+                for txt in record.txt_data() {
+                    if let Ok(addr_str) = std::str::from_utf8(txt) {
+                        let addr_str = addr_str.trim_start_matches("dnsaddr="); // Remove "dnsaddr=" prefix
+
+                        if let Ok(peer_multiaddr) = Multiaddr::from_str(addr_str) {
+                            known_peers.push(peer_multiaddr);
+                        }
                     }
                 }
             }
+        }
+
+        if known_peers.is_empty() {
+            println!(
+                "No peers found through dns bootstrapping, specify known peers with --known-peer"
+            );
         }
     }
 
