@@ -252,6 +252,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 },
                 SwarmEvent::Behaviour(SplashBehaviourEvent::Identify(identify::Event::Received { info: identify::Info { observed_addr, listen_addrs, .. }, peer_id })) => {
                     for addr in listen_addrs {
+                        // If the node is advertising a non-global address, ignore it
+                        // TODO: also filter out ipv6 private addresses when rust API is finalized
+                        let is_non_global = addr.iter().any(|p| match p {
+                            Protocol::Ip4(addr) => addr.is_loopback() || addr.is_private(),
+                            Protocol::Ip6(addr) => addr.is_loopback(),
+                            _ => false,
+                        });
+
+                        if is_non_global {
+                            continue;
+                        }
+
                         swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
                     }
                     // Mark the address observed for us by the external peer as confirmed.
