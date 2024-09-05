@@ -1,6 +1,5 @@
 use clap::Parser;
 use futures::stream::StreamExt;
-use hickory_resolver::TokioAsyncResolver;
 use libp2p::multiaddr::Protocol;
 use libp2p::{gossipsub, kad, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux};
 use libp2p::{identify, identity, Multiaddr, PeerId, StreamProtocol};
@@ -12,13 +11,14 @@ use std::fs::{self, File};
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::net::SocketAddr;
-use std::str::FromStr;
 use std::time::Duration;
 use tokio::{io, select, time};
 use tracing_subscriber::EnvFilter;
 use warp::http::header;
 use warp::http::StatusCode;
 use warp::Filter;
+
+mod dns;
 
 #[derive(NetworkBehaviour)]
 struct SplashBehaviour {
@@ -51,46 +51,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let mut known_peers = opt.known_peer.clone();
-
-    if known_peers.is_empty() {
+    let known_peers = if opt.known_peer.is_empty() {
         println!("No known peers, bootstrapping from dexies dns introducer");
-
-        const DNS_NAME: &str = "_dnsaddr.splash.dexie.space.";
-
-        let resolver = TokioAsyncResolver::tokio_from_system_conf().unwrap();
-        let mut response = resolver.txt_lookup(DNS_NAME).await;
-
-        // fallback to cloudflare dns if system dns lookup fails (possibly due to large response)
-        if response.is_err() || response.as_ref().unwrap().iter().next().is_none() {
-            println!("system dns lookup failed, trying cloudflare dns");
-            let cloudflare_resolver = TokioAsyncResolver::tokio(
-                hickory_resolver::config::ResolverConfig::cloudflare(),
-                hickory_resolver::config::ResolverOpts::default(),
-            );
-            response = cloudflare_resolver.txt_lookup(DNS_NAME).await;
-        }
-
-        if let Ok(records) = response {
-            for record in records.iter() {
-                for txt in record.txt_data() {
-                    if let Ok(addr_str) = std::str::from_utf8(txt) {
-                        let addr_str = addr_str.trim_start_matches("dnsaddr="); // Remove "dnsaddr=" prefix
-
-                        if let Ok(peer_multiaddr) = Multiaddr::from_str(addr_str) {
-                            known_peers.push(peer_multiaddr);
-                        }
-                    }
-                }
-            }
-        }
-
-        if known_peers.is_empty() {
-            println!(
-                "No peers found through dns bootstrapping, specify known peers with --known-peer"
-            );
-        }
-    }
+        dns::resolve_peers_from_dns().await.map_err(|e| format!("Failed to resolve peers from DNS: {}", e))?
+    } else {
+        opt.known_peer.clone()
+    };
 
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(id_keys)
         .with_tokio()
