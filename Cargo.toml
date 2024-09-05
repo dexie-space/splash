@@ -1,7 +1,13 @@
 [package]
 name = "splash"
-version = "0.0.10"
+version = "0.0.11"
 edition = "2021"
+authors = ["dns <dns@dexie.space>"]
+description = "A decentralized network for sharing offers across the Chia ecosystem"
+license = "MIT"
+homepage = "https://dexie.space/splash"
+repository = "https://github.com/dexie-space/splash"
+keywords = ["p2p", "dexie", "chia", "blockchain", "crypto"]
 
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }
