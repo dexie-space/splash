@@ -8,6 +8,7 @@ use std::error::Error;
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use tokio::{io, select, time};
 use tracing_subscriber::EnvFilter;
 use warp::http::header;
@@ -15,6 +16,13 @@ use warp::http::StatusCode;
 use warp::Filter;
 
 mod dns;
+
+pub enum SplashEvent {
+    PeerConnected(PeerId),
+    PeerDisconnected(PeerId),
+    OfferReceived(String),
+    NewListenAddress(Multiaddr),
+}
 
 #[derive(NetworkBehaviour)]
 struct SplashBehaviour {
@@ -28,9 +36,9 @@ const MAX_OFFER_SIZE: usize = 300 * 1024;
 pub async fn run_splash(
     known_peers: Vec<Multiaddr>,
     listen_addresses: Vec<Multiaddr>,
-    offer_hook: Option<String>,
     listen_offer_submission: Option<String>,
     keys: Option<identity::Keypair>,
+    event_tx: mpsc::Sender<SplashEvent>,
 ) -> Result<(), Box<dyn Error>> {
     let keys = keys.unwrap_or_else(identity::Keypair::generate_ed25519);
 
@@ -197,10 +205,10 @@ pub async fn run_splash(
             },
             event = swarm.select_next_some() => match event {
                 SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                    println!("Connected to peer: {peer_id}");
+                    let _ = event_tx.send(SplashEvent::PeerConnected(peer_id)).await;
                 },
                 SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                    println!("Disconnected from peer: {peer_id}");
+                    let _ = event_tx.send(SplashEvent::PeerDisconnected(peer_id)).await;
                 },
                 SwarmEvent::Behaviour(SplashBehaviourEvent::Gossipsub(gossipsub::Event::Message {
                     propagation_source: _,
@@ -210,20 +218,9 @@ pub async fn run_splash(
                     let data_clone = message.data.clone();
                     let msg_str = String::from_utf8_lossy(&data_clone).into_owned();
 
+                    // TODO: are we really keeping the sanity check this simple?
                     if msg_str.starts_with("offer1") {
-                        println!(
-                            "Received Offer: {}",
-                            msg_str,
-                        );
-
-                        if let Some(ref endpoint_url) = offer_hook {
-                            let endpoint_url_clone = endpoint_url.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = offer_post_hook(&endpoint_url_clone, &msg_str).await {
-                                    eprintln!("Error posting to offer hook: {}", e);
-                                }
-                            });
-                        }
+                        let _ = event_tx.send(SplashEvent::OfferReceived(msg_str)).await;
                     }
                 },
                 SwarmEvent::Behaviour(SplashBehaviourEvent::Identify(identify::Event::Received { info: identify::Info { observed_addr, listen_addrs, .. }, peer_id, connection_id: _ })) => {
@@ -248,19 +245,10 @@ pub async fn run_splash(
                     swarm.add_external_address(observed_addr);
                 },
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("Listening on: {address}");
+                    let _ = event_tx.send(SplashEvent::NewListenAddress(address)).await;
                 },
                 _ => {}
             }
         }
     }
-}
-
-async fn offer_post_hook(endpoint: &str, offer: &str) -> Result<(), reqwest::Error> {
-    let client = reqwest::Client::new();
-
-    let offer_json = json!({ "offer": offer });
-    client.post(endpoint).json(&offer_json).send().await?;
-
-    Ok(())
 }

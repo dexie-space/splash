@@ -1,7 +1,8 @@
 use clap::Parser;
 use libp2p::identity;
 use libp2p::Multiaddr;
-use splash;
+use splash::SplashEvent;
+use tokio::sync::mpsc;
 
 mod utils;
 
@@ -58,12 +59,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     });
 
-    splash::run_splash(
-        opt.known_peer,
-        opt.listen_address,
-        opt.offer_hook,
-        opt.listen_offer_submission,
-        keys,
-    )
-    .await
+    let (event_tx, mut event_rx) = mpsc::channel(100);
+
+    tokio::spawn(async move {
+        splash::run_splash(
+            opt.known_peer,
+            opt.listen_address,
+            opt.listen_offer_submission,
+            keys,
+            event_tx,
+        )
+        .await
+        .unwrap();
+    });
+
+    while let Some(event) = event_rx.recv().await {
+        match event {
+            SplashEvent::NewListenAddress(address) => println!("Listening on: {}", address),
+
+            SplashEvent::PeerConnected(peer_id) => println!("Connected to peer: {}", peer_id),
+
+            SplashEvent::PeerDisconnected(peer_id) => {
+                println!("Disconnected from peer: {}", peer_id)
+            }
+
+            SplashEvent::OfferReceived(offer) => {
+                println!("Received Offer: {}", offer);
+
+                if let Some(ref endpoint_url) = opt.offer_hook {
+                    let endpoint_url_clone = endpoint_url.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = utils::offer_post_hook(&endpoint_url_clone, &offer).await {
+                            eprintln!("Error posting to offer hook: {}", e);
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
 }

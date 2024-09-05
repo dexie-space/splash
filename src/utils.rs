@@ -1,5 +1,6 @@
 use libp2p::identity;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::fs::{self, File};
 use std::io;
 
@@ -16,6 +17,15 @@ pub fn save_keypair_to_file(keypair: &identity::Keypair, file_path: &str) -> io:
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     let file = File::create(file_path)?;
     serde_json::to_writer(file, &IdentityJson { identity: encoded })?;
+    Ok(())
+}
+
+pub async fn offer_post_hook(endpoint: &str, offer: &str) -> Result<(), reqwest::Error> {
+    let client = reqwest::Client::new();
+
+    let offer_json = json!({ "offer": offer });
+    client.post(endpoint).json(&offer_json).send().await?;
+
     Ok(())
 }
 
