@@ -92,11 +92,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             )?;
 
             // Create a Kademlia behaviour.
-            let mut cfg = kad::Config::default();
-
-            cfg.set_protocol_names(vec![StreamProtocol::try_from_owned(
-                "/splash/kad/1".to_string(),
-            )?]);
+            let mut cfg = kad::Config::new(
+                StreamProtocol::try_from_owned("/splash/kad/1".to_string())
+                    .expect("protocol name is valid"),
+            );
 
             cfg.set_query_timeout(Duration::from_secs(60));
             let store = kad::store::MemoryStore::new(key.public().to_peer_id());
@@ -238,7 +237,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 },
-                SwarmEvent::Behaviour(SplashBehaviourEvent::Identify(identify::Event::Received { info: identify::Info { observed_addr, listen_addrs, .. }, peer_id })) => {
+                SwarmEvent::Behaviour(SplashBehaviourEvent::Identify(identify::Event::Received { info: identify::Info { observed_addr, listen_addrs, .. }, peer_id, connection_id: _ })) => {
                     for addr in listen_addrs {
                         // If the node is advertising a non-global address, ignore it
                         // TODO: also filter out ipv6 private addresses when rust API is finalized
