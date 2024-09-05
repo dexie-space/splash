@@ -53,7 +53,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let known_peers = if opt.known_peer.is_empty() {
         println!("No known peers, bootstrapping from dexies dns introducer");
-        dns::resolve_peers_from_dns().await.map_err(|e| format!("Failed to resolve peers from DNS: {}", e))?
+        dns::resolve_peers_from_dns()
+            .await
+            .map_err(|e| format!("Failed to resolve peers from dns: {}", e))?
     } else {
         opt.known_peer.clone()
     };
