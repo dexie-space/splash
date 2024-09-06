@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         splash = splash.with_keys(keypair);
     }
 
-    let (mut events, instance, peer_id) = splash.build().await?;
+    let (instance, mut events, peer_id) = splash.build().await?;
 
     println!("Our Peer ID: {}", peer_id);
 

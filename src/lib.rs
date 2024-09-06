@@ -105,7 +105,7 @@ impl Splash {
 
     pub async fn build(
         mut self,
-    ) -> Result<(mpsc::Receiver<SplashEvent>, Splash, PeerId), Box<dyn std::error::Error>> {
+    ) -> Result<(Splash, mpsc::Receiver<SplashEvent>, PeerId), Box<dyn std::error::Error>> {
         let peer_id: PeerId = self.keys.public().to_peer_id();
 
         let (event_tx, event_rx) = mpsc::channel(100);
@@ -269,6 +269,6 @@ impl Splash {
             }
         });
 
-        Ok((event_rx, self, peer_id))
+        Ok((self, event_rx, peer_id))
     }
 }
