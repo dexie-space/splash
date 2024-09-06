@@ -62,9 +62,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     });
 
-    let (mut events, submission) = Splash::new(opt.known_peer, opt.listen_address, keys).await?;
+    let (mut events, submission, peer_id) = Splash::new(opt.known_peer, opt.listen_address, keys).await?;
 
-    // Start local webserver for offer submission, only if --listen-offer-submission is specified
+    println!("Our Peer ID: {}", peer_id);
+
+    // Start a local webserver for offer submission, only if --listen-offer-submission is specified
     if let Some(submission_addr_str) = opt.listen_offer_submission {
         let offer_route =
             warp::post()

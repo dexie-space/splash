@@ -8,7 +8,6 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::{io, select, time};
-use tracing_subscriber::EnvFilter;
 
 mod dns;
 
@@ -50,15 +49,10 @@ impl Splash {
         known_peers: Vec<Multiaddr>,
         listen_addresses: Vec<Multiaddr>,
         keys: Option<identity::Keypair>,
-    ) -> Result<(mpsc::Receiver<SplashEvent>, Splash), Box<dyn std::error::Error>> {
+    ) -> Result<(mpsc::Receiver<SplashEvent>, Splash, PeerId), Box<dyn std::error::Error>> {
+
         let keys = keys.unwrap_or_else(identity::Keypair::generate_ed25519);
-
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::from_default_env())
-            .try_init();
-
-        let (event_tx, event_rx) = mpsc::channel(100);
-        let (offer_tx, mut offer_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(100);
+        let peer_id = keys.public().to_peer_id();
 
         let known_peers = if known_peers.is_empty() {
             println!("No known peers, bootstrapping from dexies dns introducer");
@@ -69,6 +63,9 @@ impl Splash {
             known_peers.clone()
         };
 
+        let (event_tx, event_rx) = mpsc::channel(100);
+        let (offer_tx, mut offer_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(100);
+
         let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keys)
             .with_tokio()
             .with_tcp(
@@ -77,8 +74,6 @@ impl Splash {
                 yamux::Config::default,
             )?
             .with_behaviour(|key| {
-                println!("Our Peer ID: {}", key.public().to_peer_id());
-
                 // We can take the hash of message and use it as an ID.
                 let unique_offer_fn = |message: &gossipsub::Message| {
                     let mut s = DefaultHasher::new();
@@ -221,6 +216,7 @@ impl Splash {
             Splash {
                 submission: offer_tx,
             },
+            peer_id
         ))
     }
 
