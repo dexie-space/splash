@@ -7,7 +7,7 @@ description = "A decentralized network for sharing offers across the Chia ecosys
 license = "MIT"
 homepage = "https://dexie.space/splash"
 repository = "https://github.com/dexie-space/splash"
-keywords = ["p2p", "dexie", "chia", "blockchain", "crypto"]
+keywords = ["p2p", "dexie", "chia", "offers, "blockchain", "crypto"]
 
 [dependencies]
 tokio = { version = "1.35", features = ["full"] }
