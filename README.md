@@ -95,7 +95,7 @@ use splash::{Splash, SplashEvent};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (mut events, splash) = Splash::new().await?;
+    let (mut events, splash) = Splash::new().build().await?;
 
     // Submit an offer
     // splash.submit_offer("offer1...").await?;

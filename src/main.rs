@@ -2,8 +2,7 @@ use clap::Parser;
 use libp2p::identity;
 use libp2p::Multiaddr;
 use serde_json::json;
-use splash::Splash;
-use splash::SplashEvent;
+use splash::{Splash, SplashEvent};
 use std::net::SocketAddr;
 use warp::http::StatusCode;
 use warp::Filter;
@@ -53,17 +52,22 @@ struct Opt {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
 
+    let mut splash = Splash::new()
+        .with_listen_addresses(opt.listen_address)
+        .with_known_peers(opt.known_peer);
+
     // Load or generate peer identity (keypair), only if --identity-file is specified
-    let keys = opt.identity_file.as_ref().map(|file_path| {
+    if let Some(keypair) = opt.identity_file.as_ref().map(|file_path| {
         utils::load_keypair_from_file(file_path).unwrap_or_else(|_| {
             let keypair = identity::Keypair::generate_ed25519();
             utils::save_keypair_to_file(&keypair, file_path).ok();
             keypair
         })
-    });
+    }) {
+        splash = splash.with_keys(keypair);
+    }
 
-    let (mut events, submission, peer_id) =
-        Splash::new(opt.known_peer, opt.listen_address, keys).await?;
+    let (mut events, instance, peer_id) = splash.build().await?;
 
     println!("Our Peer ID: {}", peer_id);
 
@@ -73,12 +77,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             warp::post()
                 .and(warp::body::json())
                 .and_then(move |offer: serde_json::Value| {
-                    let submission = submission.clone();
+                    let instance = instance.clone();
                     async move {
                         let response = match offer.get("offer").and_then(|v| v.as_str()) {
                             Some(offer_str) => {
                                 let offer_str = offer_str.to_owned(); // Clone the offer string to own it
-                                match submission.submit_offer(&offer_str).await {
+                                match instance.submit_offer(&offer_str).await {
                                     Ok(_) => warp::reply::with_status(
                                         warp::reply::json(&json!({
                                             "success": true,
