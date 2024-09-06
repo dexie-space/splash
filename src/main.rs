@@ -62,12 +62,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     });
 
-    let (mut events, submission, peer_id) = Splash::new(opt.known_peer, opt.listen_address, keys).await?;
+    let (mut events, submission, peer_id) =
+        Splash::new(opt.known_peer, opt.listen_address, keys).await?;
 
     println!("Our Peer ID: {}", peer_id);
 
     // Start a local webserver for offer submission, only if --listen-offer-submission is specified
-    if let Some(submission_addr_str) = opt.listen_offer_submission {
+    if let Some(offer_submission_addr_str) = opt.listen_offer_submission {
         let offer_route =
             warp::post()
                 .and(warp::body::json())
@@ -106,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 });
 
-        let submission_addr: SocketAddr = submission_addr_str.parse()?;
+        let submission_addr: SocketAddr = offer_submission_addr_str.parse()?;
 
         tokio::spawn(async move {
             warp::serve(offer_route).run(submission_addr).await;

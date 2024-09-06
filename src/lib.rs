@@ -50,12 +50,10 @@ impl Splash {
         listen_addresses: Vec<Multiaddr>,
         keys: Option<identity::Keypair>,
     ) -> Result<(mpsc::Receiver<SplashEvent>, Splash, PeerId), Box<dyn std::error::Error>> {
-
         let keys = keys.unwrap_or_else(identity::Keypair::generate_ed25519);
         let peer_id = keys.public().to_peer_id();
 
         let known_peers = if known_peers.is_empty() {
-            println!("No known peers, bootstrapping from dexies dns introducer");
             dns::resolve_peers_from_dns()
                 .await
                 .map_err(|e| format!("Failed to resolve peers from dns: {}", e))?
@@ -216,7 +214,7 @@ impl Splash {
             Splash {
                 submission: offer_tx,
             },
-            peer_id
+            peer_id,
         ))
     }
 
