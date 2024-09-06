@@ -37,6 +37,8 @@ Options:
           Start a HTTP API for offer submission, expects JSON body {"offer":"offer1..."}
   -h, --help
           Print help
+  -V, --version
+          Print version
 ```
 
 ## Examples
@@ -75,10 +77,47 @@ docker run -p 11511:11511 -p 4000:4000 dexiespace/splash:latest \
 curl -X POST -H "Content-Type: application/json" -d '{"offer":"offer1..."}' http://localhost:4000
 ```
 
+## Using Splash Programmatically
+
+Splash can be integrated into any Rust project. Here's how to do it:
+
+1. Add Splash to your `Cargo.toml`:
+
+```toml
+[dependencies]
+splash = { git = "https://github.com/dexie-space/splash"}
+```
+
+2. In your Rust code, initialize Splash and listen for events:
+
+```rust
+use splash::{Splash, SplashEvent};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (mut events, splash) = Splash::new().await?;
+
+    // Submit an offer
+    // splash.submit_offer("offer1...").await?;
+
+    // Process events
+    while let Some(event) = events.recv().await {
+        match event {
+            SplashEvent::NewListenAddress(address) => println!("Listening on: {}", address),
+            SplashEvent::PeerConnected(peer_id) => println!("Connected to peer: {}", peer_id),
+            SplashEvent::PeerDisconnected(peer_id) => println!("Disconnected from peer: {}", peer_id),
+            SplashEvent::OfferReceived(offer) => println!("Received offer: {}", offer),
+            SplashEvent::OfferBroadcasted(offer) => println!("Broadcasted offer: {}", offer),
+            SplashEvent::OfferBroadcastFailed(err) => println!("Failed to broadcast offer: {}", err),
+        }
+    }
+
+    Ok(())
+}
+```
+
 ## Become a stable peer
 
 To become a stable peer, you need to open an inbound port in your firewall. Then start Splash! with the `--listen-address` option and choose your public interface and the selected port (eg. `11511`).
 
 `./splash --listen-address /ip6/2001:db8::1/tcp/11511 --listen-address /ip4/1.2.3.4/tcp/11511`
-
-Running a stable peer? Let us know! We will add you to the default bootstrap list.
