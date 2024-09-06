@@ -23,6 +23,7 @@ pub enum SplashError {
 }
 
 pub enum SplashEvent {
+    Initialized(PeerId),
     PeerConnected(PeerId),
     PeerDisconnected(PeerId),
     OfferReceived(String),
@@ -105,9 +106,7 @@ impl Splash {
 
     pub async fn build(
         mut self,
-    ) -> Result<(Splash, mpsc::Receiver<SplashEvent>, PeerId), Box<dyn std::error::Error>> {
-        let peer_id: PeerId = self.keys.public().to_peer_id();
-
+    ) -> Result<(Splash, mpsc::Receiver<SplashEvent>), Box<dyn std::error::Error>> {
         let (event_tx, event_rx) = mpsc::channel(100);
 
         // Check if known_peers is empty and resolve from DNS if necessary
@@ -205,6 +204,10 @@ impl Splash {
             .take()
             .ok_or("Submission receiver already consumed")?;
 
+        let _ = event_tx
+            .send(SplashEvent::Initialized(self.keys.public().to_peer_id()))
+            .await;
+
         // Main event loop
         tokio::spawn(async move {
             loop {
@@ -269,6 +272,6 @@ impl Splash {
             }
         });
 
-        Ok((self, event_rx, peer_id))
+        Ok((self, event_rx))
     }
 }

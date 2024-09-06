@@ -67,9 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         splash = splash.with_keys(keypair);
     }
 
-    let (instance, mut events, peer_id) = splash.build().await?;
-
-    println!("Our Peer ID: {}", peer_id);
+    let (instance, mut events) = splash.build().await?;
 
     // Start a local webserver for offer submission, only if --listen-offer-submission is specified
     if let Some(offer_submission_addr_str) = opt.listen_offer_submission {
@@ -121,6 +119,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Process the received events
     while let Some(event) = events.recv().await {
         match event {
+            SplashEvent::Initialized(peer_id) => println!("Our Peer ID: {}", peer_id),
+
             SplashEvent::NewListenAddress(address) => println!("Listening on: {}", address),
 
             SplashEvent::PeerConnected(peer_id) => println!("Connected to peer: {}", peer_id),
