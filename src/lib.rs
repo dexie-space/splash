@@ -6,7 +6,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::{io, select, time};
 mod dns;
 
@@ -31,9 +31,24 @@ pub enum SplashEvent {
     OfferBroadcastFailed(gossipsub::PublishError),
 }
 
-#[derive(Clone)]
 pub struct Splash {
-    pub submission: mpsc::Sender<Vec<u8>>,
+    pub listen_addresses: Vec<Multiaddr>,
+    pub known_peers: Vec<Multiaddr>,
+    pub keys: identity::Keypair,
+    submission: Sender<Vec<u8>>,
+    submission_receiver: Option<Receiver<Vec<u8>>>,
+}
+
+impl Clone for Splash {
+    fn clone(&self) -> Self {
+        Splash {
+            listen_addresses: self.listen_addresses.clone(),
+            known_peers: self.known_peers.clone(),
+            keys: self.keys.clone(),
+            submission: self.submission.clone(),
+            submission_receiver: None,
+        }
+    }
 }
 
 #[derive(NetworkBehaviour)]
@@ -44,26 +59,65 @@ struct SplashBehaviour {
 }
 
 impl Splash {
-    pub async fn new(
-        known_peers: Vec<Multiaddr>,
-        listen_addresses: Vec<Multiaddr>,
-        keys: Option<identity::Keypair>,
-    ) -> Result<(mpsc::Receiver<SplashEvent>, Splash, PeerId), Box<dyn std::error::Error>> {
-        let keys = keys.unwrap_or_else(identity::Keypair::generate_ed25519);
-        let peer_id = keys.public().to_peer_id();
+    pub fn new() -> Splash {
+        let (submission_sender, submission_receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(100);
 
-        let known_peers = if known_peers.is_empty() {
-            dns::resolve_peers_from_dns()
-                .await
-                .map_err(|e| format!("Failed to resolve peers from dns: {}", e))?
-        } else {
-            known_peers.clone()
-        };
+        Splash {
+            known_peers: Vec::new(),
+            listen_addresses: Vec::new(),
+            keys: identity::Keypair::generate_ed25519(),
+            submission: submission_sender,
+            submission_receiver: Some(submission_receiver),
+        }
+    }
+
+    pub async fn submit_offer(&self, offer: &str) -> Result<(), SplashError> {
+        if offer.len() > MAX_OFFER_SIZE {
+            return Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE));
+        }
+
+        if bech32::decode(&offer).is_err() {
+            return Err(SplashError::InvalidOfferFormat);
+        }
+
+        self.submission
+            .send(offer.as_bytes().to_vec())
+            .await
+            .map_err(|_| SplashError::SendError)?;
+
+        Ok(())
+    }
+
+    pub fn with_listen_addresses(mut self, listen_addresses: Vec<Multiaddr>) -> Self {
+        self.listen_addresses = listen_addresses;
+        self
+    }
+
+    pub fn with_known_peers(mut self, known_peers: Vec<Multiaddr>) -> Self {
+        self.known_peers = known_peers;
+        self
+    }
+
+    pub fn with_keys(mut self, keys: identity::Keypair) -> Self {
+        self.keys = keys;
+        self
+    }
+
+    pub async fn build(
+        mut self,
+    ) -> Result<(Splash, mpsc::Receiver<SplashEvent>, PeerId), Box<dyn std::error::Error>> {
+        let peer_id: PeerId = self.keys.public().to_peer_id();
 
         let (event_tx, event_rx) = mpsc::channel(100);
-        let (offer_tx, mut offer_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(100);
 
-        let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keys)
+        // Check if known_peers is empty and resolve from DNS if necessary
+        if self.known_peers.is_empty() {
+            self.known_peers = dns::resolve_peers_from_dns()
+                .await
+                .map_err(|e| format!("Failed to resolve peers from DNS: {}", e))?;
+        }
+
+        let mut swarm = libp2p::SwarmBuilder::with_existing_identity(self.keys.clone())
             .with_tokio()
             .with_tcp(
                 tcp::Config::default(),
@@ -104,7 +158,7 @@ impl Splash {
                 let mut kademlia =
                     kad::Behaviour::with_config(key.public().to_peer_id(), store, cfg);
 
-                for addr in known_peers.iter() {
+                for addr in self.known_peers.iter() {
                     let Some(Protocol::P2p(peer_id)) = addr.iter().last() else {
                         return Err("Expect peer multiaddr to contain peer ID.".into());
                     };
@@ -127,8 +181,8 @@ impl Splash {
             .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
             .build();
 
-        if !listen_addresses.is_empty() {
-            for addr in listen_addresses.iter() {
+        if !self.listen_addresses.is_empty() {
+            for addr in self.listen_addresses.iter() {
                 swarm.listen_on(addr.clone())?;
             }
         } else {
@@ -145,11 +199,17 @@ impl Splash {
 
         let mut peer_discovery_interval = time::interval(time::Duration::from_secs(10));
 
+        // Take submission_receiver early to avoid partial move error
+        let mut submission_receiver = self
+            .submission_receiver
+            .take()
+            .ok_or("Submission receiver already consumed")?;
+
         // Main event loop
         tokio::spawn(async move {
             loop {
                 select! {
-                    Some(offer) = offer_rx.recv() => {
+                    Some(offer) = submission_receiver.recv() => {
 
                         if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), offer.clone()) {
                             let _ = event_tx.send(SplashEvent::OfferBroadcastFailed(e)).await;
@@ -208,29 +268,7 @@ impl Splash {
                 }
             }
         });
-        Ok((
-            event_rx,
-            Splash {
-                submission: offer_tx,
-            },
-            peer_id,
-        ))
-    }
 
-    pub async fn submit_offer(&self, offer: &str) -> Result<(), SplashError> {
-        if offer.len() > MAX_OFFER_SIZE {
-            return Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE));
-        }
-
-        if bech32::decode(&offer).is_err() {
-            return Err(SplashError::InvalidOfferFormat);
-        }
-
-        self.submission
-            .send(offer.as_bytes().to_vec())
-            .await
-            .map_err(|_| SplashError::SendError)?;
-
-        Ok(())
+        Ok((self, event_rx, peer_id))
     }
 }
