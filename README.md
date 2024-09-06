@@ -81,11 +81,12 @@ curl -X POST -H "Content-Type: application/json" -d '{"offer":"offer1..."}' http
 
 Splash can be integrated into any Rust project. Here's how to do it:
 
-1. Add Splash to your `Cargo.toml`:
+1. Add Splash and tokio to your `Cargo.toml`:
 
 ```toml
 [dependencies]
 splash = { git = "https://github.com/dexie-space/splash"}
+tokio = "1.40.0"
 ```
 
 2. In your Rust code, initialize Splash and listen for events:
@@ -103,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Process events
     while let Some(event) = events.recv().await {
         match event {
+            SplashEvent::Initialized(peer_id) => println!("Our Peer ID: {}", peer_id),
             SplashEvent::NewListenAddress(address) => println!("Listening on: {}", address),
             SplashEvent::PeerConnected(peer_id) => println!("Connected to peer: {}", peer_id),
             SplashEvent::PeerDisconnected(peer_id) => println!("Disconnected from peer: {}", peer_id),
