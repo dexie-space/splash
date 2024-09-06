@@ -85,7 +85,7 @@ Splash can be integrated into any Rust project. Here's how to do it:
 
 ```toml
 [dependencies]
-splash = "0.1.0"
+splash = { git = "https://github.com/dexie-space/splash"}
 ```
 
 2. In your Rust code, initialize Splash and listen for events:
