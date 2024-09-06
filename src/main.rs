@@ -1,13 +1,13 @@
 use clap::Parser;
 use libp2p::identity;
 use libp2p::Multiaddr;
-use splash::SplashEvent;
-use warp::Filter;
-mod utils;
 use serde_json::json;
 use splash::Splash;
+use splash::SplashEvent;
 use std::net::SocketAddr;
 use warp::http::StatusCode;
+use warp::Filter;
+mod utils;
 
 #[derive(Parser, Debug)]
 #[clap(name = "Splash!", version = env!("CARGO_PKG_VERSION"))]

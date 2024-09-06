@@ -8,7 +8,6 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc;
 use tokio::{io, select, time};
-
 mod dns;
 
 const MAX_OFFER_SIZE: usize = 300 * 1024;
