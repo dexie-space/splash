@@ -37,6 +37,8 @@ Options:
           Start a HTTP API for offer submission, expects JSON body {"offer":"offer1..."}
   -h, --help
           Print help
+  -V, --version
+          Print version
 ```
 
 ## Examples

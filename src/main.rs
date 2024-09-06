@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use warp::http::StatusCode;
 
 #[derive(Parser, Debug)]
-#[clap(name = "Splash!")]
+#[clap(name = "Splash!", version = env!("CARGO_PKG_VERSION"))]
 struct Opt {
     #[clap(
         long,
