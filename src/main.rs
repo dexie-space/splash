@@ -2,9 +2,12 @@ use clap::Parser;
 use libp2p::identity;
 use libp2p::Multiaddr;
 use splash::SplashEvent;
-use tokio::sync::mpsc;
-
+use warp::Filter;
 mod utils;
+use serde_json::json;
+use splash::Splash;
+use std::net::SocketAddr;
+use warp::http::StatusCode;
 
 #[derive(Parser, Debug)]
 #[clap(name = "Splash!")]
@@ -50,7 +53,7 @@ struct Opt {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
 
-    // Load or generate peer identity (keypair), only if identity_file is specified
+    // Load or generate peer identity (keypair), only if --identity-file is specified
     let keys = opt.identity_file.as_ref().map(|file_path| {
         utils::load_keypair_from_file(file_path).unwrap_or_else(|_| {
             let keypair = identity::Keypair::generate_ed25519();
@@ -59,21 +62,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     });
 
-    let (event_tx, mut event_rx) = mpsc::channel(100);
+    let (mut events, submission) = Splash::new(opt.known_peer, opt.listen_address, keys).await?;
 
-    tokio::spawn(async move {
-        splash::run_splash(
-            opt.known_peer,
-            opt.listen_address,
-            opt.listen_offer_submission,
-            keys,
-            event_tx,
-        )
-        .await
-        .unwrap();
-    });
+    // Start local webserver for offer submission, only if --listen-offer-submission is specified
+    if let Some(submission_addr_str) = opt.listen_offer_submission {
+        let offer_route =
+            warp::post()
+                .and(warp::body::json())
+                .and_then(move |offer: serde_json::Value| {
+                    let submission = submission.clone();
+                    async move {
+                        let response = match offer.get("offer").and_then(|v| v.as_str()) {
+                            Some(offer_str) => {
+                                let offer_str = offer_str.to_owned(); // Clone the offer string to own it
+                                match submission.submit_offer(&offer_str).await {
+                                    Ok(_) => warp::reply::with_status(
+                                        warp::reply::json(&json!({
+                                            "success": true,
+                                        })),
+                                        StatusCode::OK,
+                                    ),
+                                    Err(e) => warp::reply::with_status(
+                                        warp::reply::json(&json!({
+                                            "success": false,
+                                            "error": e.to_string(),
+                                        })),
+                                        StatusCode::BAD_REQUEST,
+                                    ),
+                                }
+                            }
+                            _ => warp::reply::with_status(
+                                warp::reply::json(&json!({
+                                    "success": false,
+                                    "error": "Invalid offer format"
+                                })),
+                                StatusCode::BAD_REQUEST,
+                            ),
+                        };
 
-    while let Some(event) = event_rx.recv().await {
+                        Ok::<_, warp::Rejection>(response)
+                    }
+                });
+
+        let submission_addr: SocketAddr = submission_addr_str.parse()?;
+
+        tokio::spawn(async move {
+            warp::serve(offer_route).run(submission_addr).await;
+        });
+    }
+
+    // Process the received events
+    while let Some(event) = events.recv().await {
         match event {
             SplashEvent::NewListenAddress(address) => println!("Listening on: {}", address),
 
@@ -81,6 +120,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             SplashEvent::PeerDisconnected(peer_id) => {
                 println!("Disconnected from peer: {}", peer_id)
+            }
+
+            SplashEvent::OfferBroadcasted(offer) => {
+                println!("Broadcasted Offer: {}", offer)
+            }
+
+            SplashEvent::OfferBroadcastFailed(err) => {
+                println!("Broadcasting Offer failed: {}", err)
             }
 
             SplashEvent::OfferReceived(offer) => {
