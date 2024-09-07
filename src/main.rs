@@ -2,7 +2,7 @@ use clap::Parser;
 use libp2p::identity;
 use libp2p::Multiaddr;
 use serde_json::json;
-use splash::{Splash, SplashEvent};
+use splash::{Splash, SplashContext, SplashEvent};
 use std::net::SocketAddr;
 use warp::http::StatusCode;
 use warp::Filter;
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         splash = splash.with_keys(keypair);
     }
 
-    let (instance, mut events) = splash.build().await?;
+    let SplashContext { node, mut events } = splash.build().await?;
 
     // Start a local webserver for offer submission, only if --listen-offer-submission is specified
     if let Some(offer_submission_addr_str) = opt.listen_offer_submission {
@@ -75,12 +75,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             warp::post()
                 .and(warp::body::json())
                 .and_then(move |offer: serde_json::Value| {
-                    let instance = instance.clone();
+                    let node = node.clone();
                     async move {
                         let response = match offer.get("offer").and_then(|v| v.as_str()) {
                             Some(offer_str) => {
                                 let offer_str = offer_str.to_owned(); // Clone the offer string to own it
-                                match instance.submit_offer(&offer_str).await {
+                                match node.submit_offer(&offer_str).await {
                                     Ok(_) => warp::reply::with_status(
                                         warp::reply::json(&json!({
                                             "success": true,

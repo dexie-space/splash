@@ -40,6 +40,11 @@ pub struct Splash {
     submission_receiver: Option<Receiver<Vec<u8>>>,
 }
 
+pub struct SplashContext {
+    pub node: Splash,
+    pub events: mpsc::Receiver<SplashEvent>,
+}
+
 impl Clone for Splash {
     fn clone(&self) -> Self {
         Splash {
@@ -104,9 +109,7 @@ impl Splash {
         self
     }
 
-    pub async fn build(
-        mut self,
-    ) -> Result<(Splash, mpsc::Receiver<SplashEvent>), Box<dyn std::error::Error>> {
+    pub async fn build(mut self) -> Result<SplashContext, Box<dyn std::error::Error>> {
         let (event_tx, event_rx) = mpsc::channel(100);
 
         // Check if known_peers is empty and resolve from DNS if necessary
@@ -204,9 +207,10 @@ impl Splash {
             .take()
             .ok_or("Submission receiver already consumed")?;
 
-        let _ = event_tx
+        event_tx
             .send(SplashEvent::Initialized(self.keys.public().to_peer_id()))
-            .await;
+            .await
+            .ok();
 
         // Main event loop
         tokio::spawn(async move {
@@ -215,31 +219,31 @@ impl Splash {
                     Some(offer) = submission_receiver.recv() => {
 
                         if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), offer.clone()) {
-                            let _ = event_tx.send(SplashEvent::OfferBroadcastFailed(e)).await;
+                            event_tx.send(SplashEvent::OfferBroadcastFailed(e)).await.ok();
                         }
 
-                        let _ = event_tx.send(SplashEvent::OfferBroadcasted(String::from_utf8_lossy(&offer).to_string())).await;
+                        event_tx.send(SplashEvent::OfferBroadcasted(String::from_utf8_lossy(&offer).to_string())).await.ok();
                     },
                     _ = peer_discovery_interval.tick() => {
                         swarm.behaviour_mut().kademlia.get_closest_peers(PeerId::random());
                     },
                     event = swarm.select_next_some() => match event {
                         SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                            let _ = event_tx.send(SplashEvent::PeerConnected(peer_id)).await;
+                            event_tx.send(SplashEvent::PeerConnected(peer_id)).await.ok();
                         },
                         SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                            let _ = event_tx.send(SplashEvent::PeerDisconnected(peer_id)).await;
+                            event_tx.send(SplashEvent::PeerDisconnected(peer_id)).await.ok();
                         },
                         SwarmEvent::Behaviour(SplashBehaviourEvent::Gossipsub(gossipsub::Event::Message {
                             propagation_source: _,
                             message_id: _,
                             message,
                         })) => {
-                            let data_clone = message.data.clone();
-                            let msg_str = String::from_utf8_lossy(&data_clone).into_owned();
+                            let msg_str = String::from_utf8_lossy(&message.data).into_owned();
+
                             // TODO: are we really keeping the sanity check this simple?
                             if msg_str.starts_with("offer1") {
-                                let _ = event_tx.send(SplashEvent::OfferReceived(msg_str)).await;
+                                event_tx.send(SplashEvent::OfferReceived(msg_str)).await.ok();
                             }
                         },
                         SwarmEvent::Behaviour(SplashBehaviourEvent::Identify(identify::Event::Received { info: identify::Info { observed_addr, listen_addrs, .. }, peer_id, connection_id: _ })) => {
@@ -264,7 +268,7 @@ impl Splash {
                             swarm.add_external_address(observed_addr);
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
-                            let _ = event_tx.send(SplashEvent::NewListenAddress(address)).await;
+                            event_tx.send(SplashEvent::NewListenAddress(address)).await.ok();
                         },
                         _ => {}
                     }
@@ -272,6 +276,9 @@ impl Splash {
             }
         });
 
-        Ok((self, event_rx))
+        Ok(SplashContext {
+            node: self,
+            events: event_rx,
+        })
     }
 }
