@@ -35,6 +35,8 @@ Options:
           HTTP endpoint where incoming offers are posted to, sends JSON body {"offer":"offer1..."} (defaults to STDOUT)
       --listen-offer-submission <HOST:PORT>
           Start a HTTP API for offer submission, expects JSON body {"offer":"offer1..."}
+      --listen-metrics <HOST:PORT>
+          Start a HTTP API for metrics
   -h, --help
           Print help
   -V, --version
@@ -99,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let SplashContext { node, mut events } = Splash::new().build().await?;
 
     // Submit an offer
-    // node.submit_offer("offer1...").await?;
+    // node.broadcast_offer("offer1...").await?;
 
     // Process events
     while let Some(event) = events.recv().await {
