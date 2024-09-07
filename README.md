@@ -92,14 +92,14 @@ tokio = "1.40.0"
 2. In your Rust code, initialize Splash and listen for events:
 
 ```rust
-use splash::{Splash, SplashEvent};
+use splash::{Splash, SplashEvent, SplashContext};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (splash, mut events) = Splash::new().build().await?;
+    let SplashContext { node, mut events } = Splash::new().build().await?;
 
     // Submit an offer
-    // splash.submit_offer("offer1...").await?;
+    // node.submit_offer("offer1...").await?;
 
     // Process events
     while let Some(event) = events.recv().await {
