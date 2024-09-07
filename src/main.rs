@@ -6,6 +6,7 @@ use splash::{Splash, SplashContext, SplashEvent};
 use std::net::SocketAddr;
 use warp::http::StatusCode;
 use warp::Filter;
+mod metrics;
 mod utils;
 
 #[derive(Parser, Debug)]
@@ -46,6 +47,9 @@ struct Opt {
         value_name = "HOST:PORT"
     )]
     listen_offer_submission: Option<String>,
+
+    #[clap(long, help = "Start a HTTP API for metrics", value_name = "HOST:PORT")]
+    listen_metrics: Option<String>,
 }
 
 #[tokio::main]
@@ -69,6 +73,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let SplashContext { node, mut events } = splash.build().await?;
 
+    let metrics = metrics::Metrics::new();
+
     // Start a local webserver for offer submission, only if --listen-offer-submission is specified
     if let Some(offer_submission_addr_str) = opt.listen_offer_submission {
         let offer_route =
@@ -77,35 +83,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(move |offer: serde_json::Value| {
                     let node = node.clone();
                     async move {
-                        let response = match offer.get("offer").and_then(|v| v.as_str()) {
-                            Some(offer_str) => {
-                                let offer_str = offer_str.to_owned(); // Clone the offer string to own it
-                                match node.submit_offer(&offer_str).await {
-                                    Ok(_) => warp::reply::with_status(
-                                        warp::reply::json(&json!({
-                                            "success": true,
-                                        })),
-                                        StatusCode::OK,
-                                    ),
-                                    Err(e) => warp::reply::with_status(
-                                        warp::reply::json(&json!({
-                                            "success": false,
-                                            "error": e.to_string(),
-                                        })),
-                                        StatusCode::BAD_REQUEST,
-                                    ),
+                        let response =
+                            if let Some(offer_str) = offer.get("offer").and_then(|v| v.as_str()) {
+                                match node.broadcast_offer(offer_str).await {
+                                    Ok(_) => warp::reply::json(&json!({"success": true})),
+                                    Err(e) => warp::reply::json(&json!({
+                                        "success": false,
+                                        "error": e.to_string(),
+                                    })),
                                 }
-                            }
-                            _ => warp::reply::with_status(
+                            } else {
                                 warp::reply::json(&json!({
                                     "success": false,
-                                    "error": "Invalid offer format"
-                                })),
-                                StatusCode::BAD_REQUEST,
-                            ),
-                        };
+                                    "error": "Invalid offer format",
+                                }))
+                            };
 
-                        Ok::<_, warp::Rejection>(response)
+                        Ok::<_, warp::Rejection>(warp::reply::with_status(response, StatusCode::OK))
                     }
                 });
 
@@ -116,6 +110,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Start a local webserver for splash metrics, only if --listen-metrics is specified
+    if let Some(listen_metrics_str) = opt.listen_metrics {
+        let metrics_address: SocketAddr = listen_metrics_str.parse()?;
+
+        let metrics = metrics.clone();
+        let metrics_route = metrics::metrics_filter(metrics);
+
+        tokio::spawn(async move {
+            warp::serve(metrics_route).run(metrics_address).await;
+        });
+    }
+
     // Process the received events
     while let Some(event) = events.recv().await {
         match event {
@@ -123,14 +129,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             SplashEvent::NewListenAddress(address) => println!("Listening on: {}", address),
 
-            SplashEvent::PeerConnected(peer_id) => println!("Connected to peer: {}", peer_id),
+            SplashEvent::PeerConnected(peer_id) => {
+                println!("Connected to peer: {}", peer_id);
+                metrics.increment_connections();
+            }
 
             SplashEvent::PeerDisconnected(peer_id) => {
-                println!("Disconnected from peer: {}", peer_id)
+                println!("Disconnected from peer: {}", peer_id);
+                metrics.decrement_connections();
             }
 
             SplashEvent::OfferBroadcasted(offer) => {
-                println!("Broadcasted Offer: {}", offer)
+                println!("Broadcasted Offer: {}", offer);
+                metrics.increment_offers_broadcasted();
             }
 
             SplashEvent::OfferBroadcastFailed(err) => {
@@ -139,6 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             SplashEvent::OfferReceived(offer) => {
                 println!("Received Offer: {}", offer);
+                metrics.increment_offers_received();
 
                 if let Some(ref endpoint_url) = opt.offer_hook {
                     let endpoint_url_clone = endpoint_url.clone();

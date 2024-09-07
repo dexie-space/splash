@@ -77,7 +77,7 @@ impl Splash {
         }
     }
 
-    pub async fn submit_offer(&self, offer: &str) -> Result<(), SplashError> {
+    pub async fn broadcast_offer(&self, offer: &str) -> Result<(), SplashError> {
         if offer.len() > MAX_OFFER_SIZE {
             return Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE));
         }
