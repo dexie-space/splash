@@ -169,10 +169,10 @@ impl Splash {
 
                 kademlia.bootstrap().unwrap();
 
-                let identify = identify::Behaviour::new(identify::Config::new(
-                    "/splash/id/1".into(),
-                    key.public().clone(),
-                ));
+                let identify = identify::Behaviour::new(
+                    identify::Config::new("/splash/id/1".into(), key.public().clone())
+                        .with_agent_version(format!("splash/{}", env!("CARGO_PKG_VERSION"))),
+                );
 
                 Ok(SplashBehaviour {
                     gossipsub,
