@@ -56,6 +56,8 @@ struct Opt {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::parse();
 
+    println!("Welcome to Splash! v{}", env!("CARGO_PKG_VERSION"));
+
     let mut splash = Splash::new()
         .with_listen_addresses(opt.listen_address)
         .with_known_peers(opt.known_peer);
@@ -115,7 +117,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let metrics_address: SocketAddr = listen_metrics_str.parse()?;
 
         let metrics = metrics.clone();
-        let metrics_route = metrics::metrics_filter(metrics);
+        let metrics_route = warp::get().map(move || {
+            let metrics_data = metrics.get_metrics();
+            warp::reply::json(&metrics_data)
+        });
 
         tokio::spawn(async move {
             warp::serve(metrics_route).run(metrics_address).await;
@@ -130,13 +135,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             SplashEvent::NewListenAddress(address) => println!("Listening on: {}", address),
 
             SplashEvent::PeerConnected(peer_id) => {
-                println!("Connected to peer: {}", peer_id);
-                metrics.increment_connections();
+                let peers = metrics.increment_peers();
+                println!("Connected to peer: {} (peers: {})", peer_id, peers);
             }
 
             SplashEvent::PeerDisconnected(peer_id) => {
-                println!("Disconnected from peer: {}", peer_id);
-                metrics.decrement_connections();
+                let peers = metrics.decrement_peers();
+                println!("Disconnected from peer: {} (peers: {})", peer_id, peers);
             }
 
             SplashEvent::OfferBroadcasted(offer) => {
