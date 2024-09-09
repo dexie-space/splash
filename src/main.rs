@@ -36,6 +36,9 @@ struct Opt {
     )]
     identity_file: Option<String>,
 
+    #[clap(long, short, help = "Use Testnet (testnet11)")]
+    testnet: bool,
+
     #[clap(
         long,
         help = "HTTP endpoint where incoming offers are posted to, sends JSON body {\"offer\":\"offer1...\"} (defaults to STDOUT)"
@@ -74,6 +77,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     }) {
         splash = splash.with_keys(keypair);
+    }
+
+    if opt.testnet {
+        println!("Using Testnet (testnet11)");
+        splash = splash.with_testnet();
     }
 
     let SplashContext { node, mut events } = splash.build().await?;
