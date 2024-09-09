@@ -71,7 +71,7 @@ Start a node and reuse identity:
 
 `./splash --identity-file identity.json`
 
-## Test the API with Docker
+## Using Splash with Docker
 
 ```bash
 docker run -p 11511:11511 -p 4000:4000 dexiespace/splash:latest \
@@ -80,6 +80,14 @@ docker run -p 11511:11511 -p 4000:4000 dexiespace/splash:latest \
 # send the request
 curl -X POST -H "Content-Type: application/json" -d '{"offer":"offer1..."}' http://localhost:4000
 ```
+
+## Becoming a stable peer
+
+If you run a permanent node, it is recommended that you become a stable peer. This requires opening an inbound port in your firewall. Then, start your node with the `--listen-address` option, specifying your public interface and the selected port (e.g., `11511`).
+
+`./splash --listen-address /ip6/2001:db8::1/tcp/11511 --listen-address /ip4/1.2.3.4/tcp/11511`
+
+Note: If you run Splash behind a NAT, make sure to forward the port to your local IP and listen on that local IP. Splash will detect and announce your external IP accordingly.
 
 ## Using Splash Programmatically
 
@@ -122,8 +130,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## Become a stable peer
+## Building alternative clients
 
-To become a stable peer, you need to open an inbound port in your firewall. Then start Splash! with the `--listen-address` option and choose your public interface and the selected port (eg. `11511`).
+The Splash network is based on [libp2p](https://libp2p.io), meaning any libp2p library should be able to connect to the network. Use the following identifiers:
 
-`./splash --listen-address /ip6/2001:db8::1/tcp/11511 --listen-address /ip4/1.2.3.4/tcp/11511`
+- Kademlia Protocol: `/splash/kad/1`
+- Identify Protocol: `/splash/id/1`
+- Gossipsub Subscription: `/splash/offers/1`
+
+An optional list of initially reachable peers can be requested via DNS TXT from `_dnsaddr.splash.dexie.space`.
