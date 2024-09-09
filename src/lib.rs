@@ -158,12 +158,13 @@ impl Splash {
                     .message_id_fn(unique_offer_fn) // No duplicate offers will be propagated.
                     .max_transmit_size(MAX_OFFER_SIZE)
                     .validate_messages()
+                    .validation_mode(gossipsub::ValidationMode::Permissive)
                     .build()
                     .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
 
                 // build a gossipsub network behaviour
                 let gossipsub = gossipsub::Behaviour::new(
-                    gossipsub::MessageAuthenticity::Signed(key.clone()),
+                    gossipsub::MessageAuthenticity::RandomAuthor,
                     gossipsub_config,
                 )?;
 
