@@ -36,7 +36,7 @@ struct Opt {
     )]
     identity_file: Option<String>,
 
-    #[clap(long, short, help = "Use Testnet (testnet11)")]
+    #[clap(long, short, help = "Use Testnet")]
     testnet: bool,
 
     #[clap(
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if opt.testnet {
-        println!("Using Testnet (testnet11)");
+        println!("Using Testnet");
         splash = splash.with_testnet();
     }
 

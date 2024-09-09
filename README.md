@@ -32,7 +32,7 @@ Options:
   -i, --identity-file <IDENTITY_FILE>
           Store and reuse peer identity (only useful for known peers)
   -t, --testnet
-          Use Testnet (testnet11)
+          Use Testnet
       --offer-hook <OFFER_HOOK>
           HTTP endpoint where incoming offers are posted to, sends JSON body {"offer":"offer1..."} (defaults to STDOUT)
       --listen-offer-submission <HOST:PORT>

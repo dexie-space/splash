@@ -123,7 +123,7 @@ impl Splash {
     }
 
     pub fn with_testnet(mut self) -> Self {
-        self.network_name = "splash-testnet11".to_string();
+        self.network_name = "splash-testnet".to_string();
         self
     }
 
