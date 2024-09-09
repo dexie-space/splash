@@ -1,4 +1,5 @@
 use clap::Parser;
+use env_logger;
 use libp2p::identity;
 use libp2p::Multiaddr;
 use serde_json::json;
@@ -54,6 +55,8 @@ struct Opt {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
     let opt = Opt::parse();
 
     println!("Welcome to Splash! v{}", env!("CARGO_PKG_VERSION"));

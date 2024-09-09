@@ -1,7 +1,9 @@
 use futures::stream::StreamExt;
+use libp2p::gossipsub::MessageAcceptance;
 use libp2p::multiaddr::Protocol;
 use libp2p::{gossipsub, kad, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux};
 use libp2p::{identify, identity, Multiaddr, PeerId, StreamProtocol};
+use log::warn;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
@@ -77,14 +79,22 @@ impl Splash {
         }
     }
 
-    pub async fn broadcast_offer(&self, offer: &str) -> Result<(), SplashError> {
+    pub fn validate_offer(offer: &str) -> Result<(), SplashError> {
         if offer.len() > MAX_OFFER_SIZE {
             return Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE));
         }
 
-        if bech32::decode(&offer).is_err() {
+        if !offer.starts_with("offer1") || bech32::decode(offer).is_err() {
             return Err(SplashError::InvalidOfferFormat);
         }
+
+        // TODO: more validations?
+
+        Ok(())
+    }
+
+    pub async fn broadcast_offer(&self, offer: &str) -> Result<(), SplashError> {
+        // Splash::validate_offer(offer)?;
 
         self.submission
             .send(offer.as_bytes().to_vec())
@@ -139,6 +149,7 @@ impl Splash {
                     .heartbeat_interval(Duration::from_secs(5)) // This is set to aid debugging by not cluttering the log space
                     .message_id_fn(unique_offer_fn) // No duplicate offers will be propagated.
                     .max_transmit_size(MAX_OFFER_SIZE)
+                    .validate_messages()
                     .build()
                     .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
 
@@ -235,15 +246,21 @@ impl Splash {
                             event_tx.send(SplashEvent::PeerDisconnected(peer_id)).await.ok();
                         },
                         SwarmEvent::Behaviour(SplashBehaviourEvent::Gossipsub(gossipsub::Event::Message {
-                            propagation_source: _,
-                            message_id: _,
+                            propagation_source,
+                            message_id,
                             message,
                         })) => {
                             let msg_str = String::from_utf8_lossy(&message.data).into_owned();
 
-                            // TODO: are we really keeping the sanity check this simple?
-                            if msg_str.starts_with("offer1") {
-                                event_tx.send(SplashEvent::OfferReceived(msg_str)).await.ok();
+                            match Splash::validate_offer(&msg_str) {
+                                Ok(_) => {
+                                    event_tx.send(SplashEvent::OfferReceived(msg_str)).await.ok();
+                                    swarm.behaviour_mut().gossipsub.report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Accept).ok();
+                                }
+                                Err(e) => {
+                                    warn!("Received invalid offer: {}", e);
+                                    swarm.behaviour_mut().gossipsub.report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Reject).ok();
+                                }
                             }
                         },
                         SwarmEvent::Behaviour(SplashBehaviourEvent::Identify(identify::Event::Received { info: identify::Info { observed_addr, listen_addrs, .. }, peer_id, connection_id: _ })) => {
