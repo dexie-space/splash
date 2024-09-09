@@ -94,7 +94,7 @@ impl Splash {
     }
 
     pub async fn broadcast_offer(&self, offer: &str) -> Result<(), SplashError> {
-        // Splash::validate_offer(offer)?;
+        Splash::validate_offer(offer)?;
 
         self.submission
             .send(offer.as_bytes().to_vec())
