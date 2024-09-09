@@ -158,12 +158,17 @@ impl Splash {
                     .message_id_fn(unique_offer_fn) // No duplicate offers will be propagated.
                     .max_transmit_size(MAX_OFFER_SIZE)
                     .validate_messages()
+                    .validation_mode(gossipsub::ValidationMode::Permissive)
                     .build()
                     .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
 
+                // Generate a dummy keypair for signing gossipsub messages
+                // TODO: use gossipsub::MessageAuthenticity::RandomAuthor and disable signing for even more privacy (once enough nodes are updated)
+                let dummy_key = identity::Keypair::generate_ed25519();
+
                 // build a gossipsub network behaviour
                 let gossipsub = gossipsub::Behaviour::new(
-                    gossipsub::MessageAuthenticity::Signed(key.clone()),
+                    gossipsub::MessageAuthenticity::Signed(dummy_key),
                     gossipsub_config,
                 )?;
 
