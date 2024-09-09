@@ -38,6 +38,7 @@ pub struct Splash {
     pub listen_addresses: Vec<Multiaddr>,
     pub known_peers: Vec<Multiaddr>,
     pub keys: identity::Keypair,
+    network_name: String,
     submission: Sender<Vec<u8>>,
     submission_receiver: Option<Receiver<Vec<u8>>>,
 }
@@ -53,6 +54,7 @@ impl Clone for Splash {
             listen_addresses: self.listen_addresses.clone(),
             known_peers: self.known_peers.clone(),
             keys: self.keys.clone(),
+            network_name: self.network_name.clone(),
             submission: self.submission.clone(),
             submission_receiver: None,
         }
@@ -74,6 +76,7 @@ impl Splash {
             known_peers: Vec::new(),
             listen_addresses: Vec::new(),
             keys: identity::Keypair::generate_ed25519(),
+            network_name: "splash".to_string(),
             submission: submission_sender,
             submission_receiver: Some(submission_receiver),
         }
@@ -119,12 +122,17 @@ impl Splash {
         self
     }
 
+    pub fn with_testnet(mut self) -> Self {
+        self.network_name = "splash-testnet".to_string();
+        self
+    }
+
     pub async fn build(mut self) -> Result<SplashContext, Box<dyn std::error::Error>> {
         let (event_tx, event_rx) = mpsc::channel(100);
 
         // Check if known_peers is empty and resolve from DNS if necessary
         if self.known_peers.is_empty() {
-            self.known_peers = dns::resolve_peers_from_dns()
+            self.known_peers = dns::resolve_peers_from_dns(self.network_name.clone())
                 .await
                 .map_err(|e| format!("Failed to resolve peers from DNS: {}", e))?;
         }
@@ -161,7 +169,7 @@ impl Splash {
 
                 // Create a Kademlia behaviour.
                 let mut cfg = kad::Config::new(
-                    StreamProtocol::try_from_owned("/splash/kad/1".to_string())
+                    StreamProtocol::try_from_owned(format!("/{}/kad/1", self.network_name))
                         .expect("protocol name is valid"),
                 );
 
@@ -181,8 +189,11 @@ impl Splash {
                 kademlia.bootstrap().unwrap();
 
                 let identify = identify::Behaviour::new(
-                    identify::Config::new("/splash/id/1".into(), key.public().clone())
-                        .with_agent_version(format!("splash/{}", env!("CARGO_PKG_VERSION"))),
+                    identify::Config::new(
+                        format!("/{}/id/1", self.network_name),
+                        key.public().clone(),
+                    )
+                    .with_agent_version(format!("splash/{}", env!("CARGO_PKG_VERSION"))),
                 );
 
                 Ok(SplashBehaviour {
@@ -205,7 +216,7 @@ impl Splash {
         }
 
         // Create a Gossipsub topic
-        let topic = gossipsub::IdentTopic::new("/splash/offers/1");
+        let topic = gossipsub::IdentTopic::new(format!("/{}/offers/1", self.network_name));
 
         // subscribes to our topic
         swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
