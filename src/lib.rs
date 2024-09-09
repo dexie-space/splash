@@ -162,9 +162,13 @@ impl Splash {
                     .build()
                     .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
 
+                // Generate a dummy keypair for signing gossipsub messages
+                // TODO: use gossipsub::MessageAuthenticity::RandomAuthor and disable signing for even more privacy (once enough nodes are updated)
+                let dummy_key = identity::Keypair::generate_ed25519();
+
                 // build a gossipsub network behaviour
                 let gossipsub = gossipsub::Behaviour::new(
-                    gossipsub::MessageAuthenticity::RandomAuthor,
+                    gossipsub::MessageAuthenticity::Signed(dummy_key),
                     gossipsub_config,
                 )?;
 
