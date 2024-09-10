@@ -1,6 +1,6 @@
 [package]
 name = "splash"
-version = "0.0.11"
+version = "0.1.0"
 edition = "2021"
 authors = ["dns <dns@dexie.space>"]
 description = "A decentralized network for sharing offers across the Chia ecosystem"
