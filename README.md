@@ -2,7 +2,7 @@
 
 Splash! is a decentralized network for sharing [Offers](https://chialisp.com/offers/) across the [Chia](https://github.com/Chia-Network/chia-blockchain) ecosystem based on Rusts [libp2p](https://github.com/libp2p/js-libp2p) with DHT peer discovery.
 
-Every connected peer receives all offers broadcasted from other peers. There is no centralized connection, the peers connect to each other and are aware of each other.
+Every connected peer receives all offers broadcasted from other peers. There is no centralized connection; peers connect to each other and are aware of each other, enabling true peer-to-peer DeFi. It also provides privacy, as it is difficult to trace where an offer in the network originated.
 
 The Splash! command line tool acts as a proxy between your application and the Splash! network. It will broadcast your offers to the network and relay offers from other peers to your local application through a local HTTP API.
 
@@ -88,6 +88,16 @@ If you run a permanent node, it is recommended that you become a stable peer. Th
 `./splash --listen-address /ip6/2001:db8::1/tcp/11511 --listen-address /ip4/1.2.3.4/tcp/11511`
 
 Note: If you run Splash behind a NAT, make sure to forward the port to your local IP and listen on that local IP. Splash will detect and announce your external IP accordingly.
+
+## Hardware requirements
+
+Splash is designed to be lightweight, does not require disk I/O, and should run on basically any hardware, including a 1st-gen Raspberry Pi. Network bandwidth usage is minimal but will increase with the number of broadcasted offers.
+
+## Splash Indexing
+
+To keep Splash as lightweight as possible, it does not index or store any offers it receives; they are simply forwarded to all connected peers or to the local HTTP hook. To find past offers or their status, you need to track them locally or use a service that indexes the offers.
+
+One such service is [dexie.space](https://dexie.space). dexie observes the Splash network, indexes all offers for easy search and retrieval, and keeps the index up to date. You can use the [dexie API](https://dexie.space/api) to search for offers, get offer details, and more.
 
 ## Using Splash Programmatically
 
