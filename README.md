@@ -16,7 +16,7 @@ You can download prebuilt binaries in the
 You can also build and install from source (requires the latest stable [Rust] compiler.)
 
 ```
-cargo install --git https://github.com/dexie-space/splash.git splash
+cargo install splash
 ```
 
 ## Usage
