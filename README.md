@@ -105,10 +105,8 @@ Splash can be integrated into any Rust project. Here's how to do it:
 
 1. Add Splash and tokio to your `Cargo.toml`:
 
-```toml
-[dependencies]
-splash = { git = "https://github.com/dexie-space/splash"}
-tokio = "1.40.0"
+```bash
+cargo add splash tokio
 ```
 
 2. In your Rust code, initialize Splash and listen for events:
