@@ -1,6 +1,6 @@
 # Splash!
 
-Splash! is a decentralized network for sharing [Offers](https://chialisp.com/offers/) across the [Chia](https://github.com/Chia-Network/chia-blockchain) ecosystem based on Rusts [libp2p](https://github.com/libp2p/js-libp2p) with DHT peer discovery.
+Splash! is a decentralized network for sharing [Offers](https://chialisp.com/offers/) across the [Chia](https://github.com/Chia-Network/chia-blockchain) ecosystem based on Rusts [libp2p](https://github.com/libp2p/rust-libp2p) with DHT peer discovery.
 
 Every connected peer receives all offers broadcasted from other peers. There is no centralized connection; peers connect to each other and are aware of each other, enabling true peer-to-peer DeFi. It also provides privacy, as it is difficult to trace where an offer in the network originated.
 
@@ -34,7 +34,7 @@ Options:
   -t, --testnet
           Use Testnet
       --offer-hook <OFFER_HOOK>
-          HTTP endpoint where incoming offers are posted to, sends JSON body {"offer":"offer1..."} (defaults to STDOUT)
+          HTTP endpoint where incoming offers are posted to, sends JSON body {"offer":"offer1..."}
       --listen-offer-submission <HOST:PORT>
           Start a HTTP API for offer submission, expects JSON body {"offer":"offer1..."}
       --listen-metrics <HOST:PORT>

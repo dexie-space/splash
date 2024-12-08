@@ -41,7 +41,7 @@ struct Opt {
 
     #[clap(
         long,
-        help = "HTTP endpoint where incoming offers are posted to, sends JSON body {\"offer\":\"offer1...\"} (defaults to STDOUT)"
+        help = "HTTP endpoint where incoming offers are posted to, sends JSON body {\"offer\":\"offer1...\"}"
     )]
     offer_hook: Option<String>,
 
