@@ -87,7 +87,7 @@ impl Splash {
             return Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE));
         }
 
-        if !offer.starts_with("offer1") || bech32::decode(offer).is_err() {
+        if bech32::decode(offer).is_err() {
             return Err(SplashError::InvalidOfferFormat);
         }
 
