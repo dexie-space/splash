@@ -1,5 +1,4 @@
 use clap::Parser;
-use env_logger;
 use libp2p::identity;
 use libp2p::Multiaddr;
 use serde_json::json;
