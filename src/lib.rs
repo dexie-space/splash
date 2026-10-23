@@ -14,7 +14,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::{select, time};
 mod dns;
 
-const MAX_OFFER_SIZE: usize = 300 * 1024;
+const MAX_OFFER_SIZE: usize = 100 * 1024;
 
 // Chia offers can exceed Bech32's standard 1023-character code length. Preserve
 // the old decoder's acceptance of long strings, bounded by MAX_OFFER_SIZE, while
@@ -393,6 +393,15 @@ mod tests {
         let offer = offer_with_length::<OfferChecksum<Bech32>>(MAX_OFFER_SIZE);
         assert_eq!(offer.len(), MAX_OFFER_SIZE);
         assert!(Splash::validate_offer(&offer).is_ok());
+    }
+
+    #[test]
+    fn rejects_offers_one_byte_over_the_size_limit() {
+        let offer = offer_with_length::<OfferChecksum<Bech32>>(MAX_OFFER_SIZE + 1);
+        assert!(matches!(
+            Splash::validate_offer(&offer),
+            Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE))
+        ));
     }
 
     #[test]
