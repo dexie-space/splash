@@ -390,17 +390,17 @@ mod tests {
 
     #[test]
     fn accepts_offers_at_the_size_limit() {
-        let offer = offer_with_length::<OfferChecksum<Bech32>>(100 * 1024);
+        let offer = offer_with_length::<OfferChecksum<Bech32>>(MAX_OFFER_SIZE);
         assert_eq!(offer.len(), MAX_OFFER_SIZE);
         assert!(Splash::validate_offer(&offer).is_ok());
     }
 
     #[test]
-    fn rejects_offers_one_byte_over_100_kib() {
-        let offer = offer_with_length::<OfferChecksum<Bech32>>(100 * 1024 + 1);
+    fn rejects_offers_one_byte_over_the_size_limit() {
+        let offer = offer_with_length::<OfferChecksum<Bech32>>(MAX_OFFER_SIZE + 1);
         assert!(matches!(
             Splash::validate_offer(&offer),
-            Err(SplashError::OfferTooLarge(limit)) if limit == 100 * 1024
+            Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE))
         ));
     }
 
