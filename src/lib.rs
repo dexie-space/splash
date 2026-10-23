@@ -1,3 +1,4 @@
+use bech32::{primitives::decode::UncheckedHrpstring, Bech32, Bech32m, Checksum};
 use futures::stream::StreamExt;
 use libp2p::gossipsub::MessageAcceptance;
 use libp2p::multiaddr::Protocol;
@@ -6,13 +7,31 @@ use libp2p::{identify, identity, Multiaddr, PeerId, StreamProtocol};
 use log::warn;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::{io, select, time};
+use tokio::{select, time};
 mod dns;
 
 const MAX_OFFER_SIZE: usize = 300 * 1024;
+
+// Chia offers can exceed Bech32's standard 1023-character code length. Preserve
+// the old decoder's acceptance of long strings, bounded by MAX_OFFER_SIZE, while
+// keeping the original Bech32/Bech32m checksum algorithms unchanged.
+struct OfferChecksum<Ck>(PhantomData<Ck>);
+
+impl<Ck: Checksum> Checksum for OfferChecksum<Ck> {
+    type MidstateRepr = Ck::MidstateRepr;
+    type CorrectionField = Ck::CorrectionField;
+
+    const ROOT_GENERATOR: Self::CorrectionField = Ck::ROOT_GENERATOR;
+    const ROOT_EXPONENTS: std::ops::RangeInclusive<usize> = Ck::ROOT_EXPONENTS;
+    const CODE_LENGTH: usize = MAX_OFFER_SIZE;
+    const CHECKSUM_LENGTH: usize = Ck::CHECKSUM_LENGTH;
+    const GENERATOR_SH: [Self::MidstateRepr; 5] = Ck::GENERATOR_SH;
+    const TARGET_RESIDUE: Self::MidstateRepr = Ck::TARGET_RESIDUE;
+}
 
 #[derive(Error, Debug)]
 pub enum SplashError {
@@ -68,6 +87,12 @@ struct SplashBehaviour {
     identify: identify::Behaviour,
 }
 
+impl Default for Splash {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Splash {
     pub fn new() -> Splash {
         let (submission_sender, submission_receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(100);
@@ -87,7 +112,11 @@ impl Splash {
             return Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE));
         }
 
-        if bech32::decode(offer).is_err() {
+        let decoded =
+            UncheckedHrpstring::new(offer).map_err(|_| SplashError::InvalidOfferFormat)?;
+        if !decoded.has_valid_checksum::<OfferChecksum<Bech32>>()
+            && !decoded.has_valid_checksum::<OfferChecksum<Bech32m>>()
+        {
             return Err(SplashError::InvalidOfferFormat);
         }
 
@@ -159,8 +188,7 @@ impl Splash {
                     .max_transmit_size(MAX_OFFER_SIZE)
                     .validate_messages()
                     .validation_mode(gossipsub::ValidationMode::Permissive)
-                    .build()
-                    .map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?; // Temporary hack because `build` does not return a proper `std::error::Error`.
+                    .build()?;
 
                 // Generate a dummy keypair for signing gossipsub messages
                 // TODO: use gossipsub::MessageAuthenticity::RandomAuthor and disable signing for even more privacy (once enough nodes are updated)
@@ -271,11 +299,11 @@ impl Splash {
                             match Splash::validate_offer(&msg_str) {
                                 Ok(_) => {
                                     event_tx.send(SplashEvent::OfferReceived(msg_str)).await.ok();
-                                    swarm.behaviour_mut().gossipsub.report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Accept).ok();
+                                    swarm.behaviour_mut().gossipsub.report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Accept);
                                 }
                                 Err(e) => {
                                     warn!("Received invalid offer: {}", e);
-                                    swarm.behaviour_mut().gossipsub.report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Reject).ok();
+                                    swarm.behaviour_mut().gossipsub.report_message_validation_result(&message_id, &propagation_source, MessageAcceptance::Reject);
                                 }
                             }
                         },
@@ -313,5 +341,91 @@ impl Splash {
             node: self,
             events: event_rx,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bech32::{Fe32, Fe32IterExt, Hrp};
+
+    fn offer_with_length<Ck: Checksum>(length: usize) -> String {
+        let hrp = Hrp::parse("offer").unwrap();
+        let data_length = length - hrp.as_bytes().len() - 1 - Ck::CHECKSUM_LENGTH;
+        std::iter::repeat_n(Fe32::Q, data_length)
+            .with_checksum::<Ck>(&hrp)
+            .chars()
+            .collect()
+    }
+
+    #[test]
+    fn accepts_both_checksum_variants_and_alternative_prefixes() {
+        for prefix in ["offer", "offer_v2", "other"] {
+            let hrp = Hrp::parse(prefix).unwrap();
+            let original = bech32::encode::<Bech32>(hrp, &[1, 2, 3]).unwrap();
+            let modified = bech32::encode::<Bech32m>(hrp, &[1, 2, 3]).unwrap();
+            assert!(Splash::validate_offer(&original).is_ok());
+            assert!(Splash::validate_offer(&modified).is_ok());
+            assert!(Splash::validate_offer(&original.to_uppercase()).is_ok());
+        }
+    }
+
+    #[test]
+    fn accepts_legacy_checksum_vectors() {
+        for offer in ["A12UEL5L", "a12uel5l", "A1LQFN3A", "a1lqfn3a"] {
+            assert!(Splash::validate_offer(offer).is_ok(), "{offer}");
+        }
+    }
+
+    #[test]
+    fn accepts_long_offers_for_both_checksum_variants() {
+        for offer in [
+            offer_with_length::<OfferChecksum<Bech32>>(4096),
+            offer_with_length::<OfferChecksum<Bech32m>>(4096),
+        ] {
+            assert!(bech32::decode(&offer).is_err());
+            assert!(Splash::validate_offer(&offer).is_ok());
+        }
+    }
+
+    #[test]
+    fn accepts_offers_at_the_size_limit() {
+        let offer = offer_with_length::<OfferChecksum<Bech32>>(MAX_OFFER_SIZE);
+        assert_eq!(offer.len(), MAX_OFFER_SIZE);
+        assert!(Splash::validate_offer(&offer).is_ok());
+    }
+
+    #[test]
+    fn rejects_oversized_offers_before_decoding() {
+        assert!(matches!(
+            Splash::validate_offer(&"q".repeat(MAX_OFFER_SIZE + 1)),
+            Err(SplashError::OfferTooLarge(MAX_OFFER_SIZE))
+        ));
+    }
+
+    #[test]
+    fn rejects_malformed_offers() {
+        for offer in [
+            "",
+            "offer1",
+            "offer1invalid",
+            "A12uEL5L",
+            "a12uel5q",
+            "🦀1qqqqqq",
+        ] {
+            assert!(
+                matches!(
+                    Splash::validate_offer(offer),
+                    Err(SplashError::InvalidOfferFormat)
+                ),
+                "{offer}"
+            );
+        }
+    }
+
+    #[test]
+    fn offer_checksums_retain_the_standard_parameters() {
+        OfferChecksum::<Bech32>::sanity_check();
+        OfferChecksum::<Bech32m>::sanity_check();
     }
 }
