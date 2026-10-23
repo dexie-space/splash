@@ -11,6 +11,7 @@ use std::marker::PhantomData;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::oneshot;
 use tokio::{select, time};
 mod dns;
 
@@ -41,7 +42,12 @@ pub enum SplashError {
     InvalidOfferFormat,
     #[error("Failed to send offer to network")]
     SendError,
+    #[error("Failed to publish offer: {0}")]
+    PublishFailed(String),
 }
+
+// An offer queued for publishing, with a channel for the publish result.
+type Submission = (Vec<u8>, oneshot::Sender<Result<(), String>>);
 
 pub enum SplashEvent {
     Initialized(PeerId),
@@ -58,8 +64,8 @@ pub struct Splash {
     pub known_peers: Vec<Multiaddr>,
     pub keys: identity::Keypair,
     network_name: String,
-    submission: Sender<Vec<u8>>,
-    submission_receiver: Option<Receiver<Vec<u8>>>,
+    submission: Sender<Submission>,
+    submission_receiver: Option<Receiver<Submission>>,
 }
 
 pub struct SplashContext {
@@ -95,7 +101,8 @@ impl Default for Splash {
 
 impl Splash {
     pub fn new() -> Splash {
-        let (submission_sender, submission_receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(100);
+        let (submission_sender, submission_receiver) =
+            tokio::sync::mpsc::channel::<Submission>(100);
 
         Splash {
             known_peers: Vec::new(),
@@ -128,12 +135,16 @@ impl Splash {
     pub async fn broadcast_offer(&self, offer: &str) -> Result<(), SplashError> {
         Splash::validate_offer(offer)?;
 
+        let (result_tx, result_rx) = oneshot::channel();
         self.submission
-            .send(offer.as_bytes().to_vec())
+            .send((offer.as_bytes().to_vec(), result_tx))
             .await
             .map_err(|_| SplashError::SendError)?;
 
-        Ok(())
+        result_rx
+            .await
+            .map_err(|_| SplashError::SendError)?
+            .map_err(SplashError::PublishFailed)
     }
 
     pub fn with_listen_addresses(mut self, listen_addresses: Vec<Multiaddr>) -> Self {
@@ -271,13 +282,17 @@ impl Splash {
         tokio::spawn(async move {
             loop {
                 select! {
-                    Some(offer) = submission_receiver.recv() => {
-
-                        if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), offer.clone()) {
-                            event_tx.send(SplashEvent::OfferBroadcastFailed(e)).await.ok();
+                    Some((offer, result_tx)) = submission_receiver.recv() => {
+                        match swarm.behaviour_mut().gossipsub.publish(topic.clone(), offer.clone()) {
+                            Ok(_) => {
+                                result_tx.send(Ok(())).ok();
+                                event_tx.send(SplashEvent::OfferBroadcasted(String::from_utf8_lossy(&offer).to_string())).await.ok();
+                            }
+                            Err(e) => {
+                                result_tx.send(Err(e.to_string())).ok();
+                                event_tx.send(SplashEvent::OfferBroadcastFailed(e)).await.ok();
+                            }
                         }
-
-                        event_tx.send(SplashEvent::OfferBroadcasted(String::from_utf8_lossy(&offer).to_string())).await.ok();
                     },
                     _ = peer_discovery_interval.tick() => {
                         swarm.behaviour_mut().kademlia.get_closest_peers(PeerId::random());
@@ -436,5 +451,30 @@ mod tests {
     fn offer_checksums_retain_the_standard_parameters() {
         OfferChecksum::<Bech32>::sanity_check();
         OfferChecksum::<Bech32m>::sanity_check();
+    }
+
+    #[tokio::test]
+    async fn broadcast_reports_publish_failure_without_peers() {
+        // An unreachable known peer skips the DNS introducer, so the node has no peers.
+        let unreachable = format!(
+            "/ip4/127.0.0.1/tcp/9/p2p/{}",
+            identity::Keypair::generate_ed25519().public().to_peer_id()
+        );
+        let SplashContext {
+            node,
+            events: _events,
+        } = Splash::new()
+            .with_testnet()
+            .with_listen_addresses(vec!["/ip4/127.0.0.1/tcp/0".parse().unwrap()])
+            .with_known_peers(vec![unreachable.parse().unwrap()])
+            .build()
+            .await
+            .unwrap();
+
+        let offer = bech32::encode::<Bech32m>(Hrp::parse("offer").unwrap(), &[1, 2, 3]).unwrap();
+        assert!(matches!(
+            node.broadcast_offer(&offer).await,
+            Err(SplashError::PublishFailed(_))
+        ));
     }
 }
