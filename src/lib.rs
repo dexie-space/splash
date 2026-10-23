@@ -35,6 +35,7 @@ impl<Ck: Checksum> Checksum for OfferChecksum<Ck> {
 }
 
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum SplashError {
     #[error("Offer exceeds maximum size of {0} bytes")]
     OfferTooLarge(usize),
