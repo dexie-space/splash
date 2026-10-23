@@ -17,11 +17,11 @@ jobs:
       matrix:
         platform:
           - os_name: Linux-aarch64
-            os: ubuntu-20.04
+            os: ubuntu-24.04
             target: aarch64-unknown-linux-musl
             bin: splash-linux-arm64
           - os_name: Linux-x86_64
-            os: ubuntu-20.04
+            os: ubuntu-24.04
             target: x86_64-unknown-linux-musl
             bin: splash-linux-amd64
           - os_name: Windows-x86_64
@@ -37,18 +37,18 @@ jobs:
             target: aarch64-apple-darwin
             bin: splash-darwin-arm64
           - os_name: FreeBSD-x86_64
-            os: ubuntu-20.04
+            os: ubuntu-24.04
             target: x86_64-unknown-freebsd
             bin: splash-freebsd-amd64
         toolchain:
           - stable
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
       - name: Install Linux musl-tools
         if: contains(matrix.platform.target, 'musl')
-        run: sudo apt-get install --yes --no-install-recommends musl-tools
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends musl-tools
       - name: Build binary
-        uses: houseabsolute/actions-rust-cross@v0
+        uses: houseabsolute/actions-rust-cross@v1
         with:
           command: "build"
           target: ${{ matrix.platform.target }}
@@ -64,7 +64,7 @@ jobs:
       - name: Generate SHA-256
         run: shasum -a 256 target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }} | cut -d ' ' -f 1 > target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}.sha256
       - name: Release binary and SHA-256 checksum to GitHub
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
@@ -75,20 +75,20 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
       - run: docker context create ci
       - run: docker context use ci
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
         with:
           endpoint: ci
       - name: Fetch latest release tag
@@ -96,10 +96,10 @@ jobs:
         run: |
           LATEST_TAG=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
           echo "Latest release tag is $LATEST_TAG"
-          echo "::set-output name=tag::$LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
         shell: bash
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
